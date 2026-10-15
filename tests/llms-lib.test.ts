@@ -84,20 +84,6 @@ describe("entrySourceUrls", () => {
       "https://github.com/example/source",
     ]);
   });
-
-  it("uses aliases when the primary url fields are empty strings", () => {
-    expect(
-      entrySourceUrls({
-        documentationUrl: "",
-        docsUrl: "https://docs.example.com/guide",
-        githubUrl: "",
-        sourceUrl: "https://github.com/example/source",
-      }),
-    ).toEqual([
-      "https://docs.example.com/guide",
-      "https://github.com/example/source",
-    ]);
-  });
 });
 
 describe("entryLastVerified", () => {
@@ -323,31 +309,6 @@ describe("renderEntryLlms", () => {
     expect(output).toContain("## Tags\n- none");
     expect(output).not.toContain("## Safety Notes");
     expect(output).not.toContain("## Privacy Notes");
-  });
-
-  it("keeps blank-line separators between every section", () => {
-    const output = renderEntryLlms(
-      entry({
-        author: "Ada",
-        tags: ["claude"],
-        safetyNotes: ["Runs locally"],
-        privacyNotes: ["No telemetry"],
-        body: "Do helpful things.",
-      }),
-    );
-    // A blank line follows the title and precedes each section header, rather
-    // than every blank line being stripped by the old `.filter(Boolean)`.
-    expect(output).toContain("# Demo Agent\n\n");
-    for (const header of [
-      "Citation Facts",
-      "Summary",
-      "Tags",
-      "Safety Notes",
-      "Privacy Notes",
-      "Content",
-    ]) {
-      expect(output).toContain(`\n\n## ${header}\n`);
-    }
   });
 
   it("renders structured section content instead of raw body", () => {

@@ -4,8 +4,7 @@ import { Sparkles, BadgeCheck, Boxes, ShieldCheck, CalendarClock } from "lucide-
 
 import { ENTRIES, REGISTRY_GENERATED_AT } from "@/data/entries";
 import { buildSkillsReport } from "@/lib/skills-stats";
-import { buildReportDataset } from "@/lib/data-reports";
-import { statHint } from "@/lib/report-stat-hint-lib";
+import { buildReportDataset, type ReportStat } from "@/lib/data-reports";
 import { absoluteUrl } from "@/lib/seo";
 import { ogImageUrl, OG_WIDTH, OG_HEIGHT } from "@/lib/og-image";
 import { stringifyJsonLd } from "@/lib/json-ld";
@@ -14,46 +13,6 @@ import { PageHeader } from "@/components/page-header";
 import { NewsletterInline } from "@/components/newsletter-inline";
 import { ReportDownloads } from "@/components/report-downloads";
 import { DataSection, DataStat, DistTable } from "@/components/data-report";
-import { withReportDimensionDrilldown } from "@/lib/data-report-drilldown-lib";
-import { trackEvent } from "@/lib/analytics";
-import {
-  stateReportCategoryBrowseAnalyticsData,
-  stateReportCategoryBrowseAnalyticsEvent,
-  stateReportCiteAnalyticsData,
-  stateReportCiteAnalyticsEvent,
-  stateReportDistRowAnalyticsData,
-  stateReportDistRowAnalyticsEvent,
-  stateReportEgressAnalyticsData,
-  stateReportEgressAnalyticsEvent,
-  stateReportEgressRouteDestination,
-  stateReportStatAnalyticsData,
-  stateReportStatAnalyticsEvent,
-  stateReportStatDestination,
-  type StateReportEgressDestination,
-} from "@/lib/state-report-page-cta-events";
-
-const REPORT_ID = "agent-skills" as const;
-const REPORT_CATEGORY = "skills";
-
-function trackStateReportEgress(destination: StateReportEgressDestination) {
-  trackEvent(
-    stateReportEgressAnalyticsEvent(),
-    stateReportEgressAnalyticsData(REPORT_ID, destination),
-  );
-}
-
-function trackStateReportCite() {
-  trackEvent(stateReportCiteAnalyticsEvent(), stateReportCiteAnalyticsData(REPORT_ID));
-}
-
-function trackStat(statKey: string) {
-  const destination = stateReportStatDestination(REPORT_ID, statKey);
-  if (!destination) return;
-  trackEvent(
-    stateReportStatAnalyticsEvent(),
-    stateReportStatAnalyticsData(REPORT_ID, statKey, destination.destination),
-  );
-}
 
 const AS_OF = String(REGISTRY_GENERATED_AT).slice(0, 10);
 const MODEL = buildSkillsReport(ENTRIES, AS_OF);
@@ -72,6 +31,10 @@ const OG_IMAGE = ogImageUrl({
   title: MODEL.title,
   description: `${MODEL.total} agent skills by use case, type & verification`,
 });
+
+function statHint(stat: ReportStat): string {
+  return stat.hint === "%" ? `${stat.value}%` : stat.hint;
+}
 
 export const Route = createFileRoute("/state-of-agent-skills")({
   head: () => {
@@ -130,46 +93,22 @@ function StateOfAgentSkillsPage() {
       <p className="mt-2 text-xs text-ink-subtle">Data as of {asOfLabel} (UTC).</p>
 
       <div className="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border stagger-children sm:grid-cols-4">
-        {MODEL.stats.map((stat) => {
-          const destination = stateReportStatDestination(REPORT_ID, stat.key);
-          return (
-            <DataStat
-              key={stat.key}
-              icon={STAT_ICON[stat.key] ?? Sparkles}
-              label={stat.label}
-              value={stat.value}
-              hint={statHint(stat)}
-              to={destination?.to}
-              search={destination?.search}
-              onNavigate={() => trackStat(stat.key)}
-            />
-          );
-        })}
+        {MODEL.stats.map((stat) => (
+          <DataStat
+            key={stat.key}
+            icon={STAT_ICON[stat.key] ?? Sparkles}
+            label={stat.label}
+            value={stat.value}
+            hint={statHint(stat)}
+          />
+        ))}
       </div>
 
-      {MODEL.dimensions.map((dimension) => {
-        const rows = withReportDimensionDrilldown(dimension.key, dimension.rows, REPORT_CATEGORY);
-        return (
-          <DataSection key={dimension.key} title={dimension.title} help={dimension.help}>
-            <DistTable
-              rows={rows}
-              onRowClick={(row, rowIndex) => {
-                if (!row.rowKey) return;
-                trackEvent(
-                  stateReportDistRowAnalyticsEvent(),
-                  stateReportDistRowAnalyticsData(
-                    REPORT_ID,
-                    dimension.key,
-                    row.rowKey,
-                    rowIndex,
-                    rows.length,
-                  ),
-                );
-              }}
-            />
-          </DataSection>
-        );
-      })}
+      {MODEL.dimensions.map((dimension) => (
+        <DataSection key={dimension.key} title={dimension.title} help={dimension.help}>
+          <DistTable rows={dimension.rows} />
+        </DataSection>
+      ))}
 
       <ReportDownloads exportSlug={MODEL.exportSlug} />
 
@@ -189,61 +128,31 @@ function StateOfAgentSkillsPage() {
         </p>
         <p className="mt-3 max-w-2xl text-sm text-ink-muted">
           Citing this report? Link to{" "}
-          <a
-            href={absoluteUrl(PATH)}
-            onClick={() => trackStateReportCite()}
-            className="text-ink underline-offset-2 hover:underline"
-          >
+          <a href={absoluteUrl(PATH)} className="text-ink underline-offset-2 hover:underline">
             heyclau.de/state-of-agent-skills
           </a>{" "}
           with the data-as-of date. See also the{" "}
-          {(() => {
-            const destination = stateReportEgressRouteDestination("claude-code-hooks");
-            if (!destination) return "State of Claude Code Hooks";
-            return (
-              <Link
-                to={destination.to}
-                onClick={() => trackStateReportEgress("claude-code-hooks")}
-                className="text-ink underline-offset-2 hover:underline"
-              >
-                State of Claude Code Hooks
-              </Link>
-            );
-          })()}{" "}
+          <Link
+            to="/state-of-claude-code-hooks"
+            className="text-ink underline-offset-2 hover:underline"
+          >
+            State of Claude Code Hooks
+          </Link>{" "}
           and the broader{" "}
-          {(() => {
-            const destination = stateReportEgressRouteDestination("claude-tooling");
-            if (!destination) return "State of Claude Tooling";
-            return (
-              <Link
-                to={destination.to}
-                onClick={() => trackStateReportEgress("claude-tooling")}
-                className="text-ink underline-offset-2 hover:underline"
-              >
-                State of Claude Tooling
-              </Link>
-            );
-          })()}
+          <Link
+            to="/state-of-claude-tooling"
+            className="text-ink underline-offset-2 hover:underline"
+          >
+            State of Claude Tooling
+          </Link>
           . Browse all{" "}
-          {(() => {
-            const destination = stateReportEgressRouteDestination("category", "skills");
-            if (!destination || !("params" in destination)) return "skills";
-            return (
-              <Link
-                to={destination.to}
-                params={destination.params}
-                onClick={() =>
-                  trackEvent(
-                    stateReportCategoryBrowseAnalyticsEvent(),
-                    stateReportCategoryBrowseAnalyticsData(REPORT_ID, "skills", MODEL.total, 0, 1),
-                  )
-                }
-                className="text-ink underline-offset-2 hover:underline"
-              >
-                skills
-              </Link>
-            );
-          })()}
+          <Link
+            to="/$category"
+            params={{ category: "skills" }}
+            className="text-ink underline-offset-2 hover:underline"
+          >
+            skills
+          </Link>
           .
         </p>
       </section>

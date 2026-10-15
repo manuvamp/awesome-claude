@@ -1,59 +1,23 @@
 import * as React from "react";
-import { hasLiveSignals, type SignalState } from "@/lib/trending-live-signals-lib";
-import { trendingRowsFromPayload, type TrendingEntry } from "@/lib/trending-rows-lib";
 import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router";
 import { z } from "zod";
 import { ArrowRight, Clock, Flame, Info, Rss, Star, TrendingUp } from "lucide-react";
 import { BRIEF_ISSUES } from "@/data/entries";
 import { PageContainer } from "@/components/page-container";
 import { getEntry, search } from "@/data/search";
-import {
-  CategoryPill,
-  SourceBadge,
-  TrustBadge,
-  InstallRiskBadge,
-  NotesPresenceChips,
-} from "@/components/badges";
+import { CategoryPill, SourceBadge, TrustBadge } from "@/components/badges";
 import { TrendingPodium } from "@/components/trending-podium";
 import { ShareMenu } from "@/components/share-menu";
-import { FilterChip, FilterChipGroup } from "@/components/filter-chip";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { CATEGORIES } from "@/types/registry";
+import { CATEGORIES, type Entry } from "@/types/registry";
 import { formatCompact } from "@/lib/format";
 import { breadcrumbScript } from "@/lib/seo-jsonld";
 import { absoluteUrl } from "@/lib/seo";
 import { ogImageUrl } from "@/lib/og-image";
-import { trackEvent } from "@/lib/analytics";
-import {
-  badgeChromeCategoryAnalyticsData,
-  badgeChromeCategoryAnalyticsEvent,
-  badgeChromeSourceAnalyticsData,
-  badgeChromeSourceAnalyticsEvent,
-  badgeChromeTrustAnalyticsData,
-  badgeChromeTrustAnalyticsEvent,
-} from "@/lib/badge-chrome-cta-events";
-import {
-  trendingCategoryFilterAnalyticsData,
-  trendingCategoryFilterAnalyticsEvent,
-  trendingChromeAnalyticsData,
-  trendingChromeAnalyticsEvent,
-  trendingChromeDestination,
-  trendingFilterResetAnalyticsData,
-  trendingFilterResetAnalyticsEvent,
-  trendingListEntryAnalyticsData,
-  trendingListEntryAnalyticsEvent,
-  trendingRankingReasonOpenAnalyticsData,
-  trendingRankingReasonOpenAnalyticsEvent,
-  trendingShareAnalyticsData,
-  trendingShareAnalyticsEvent,
-  type TrendingListWindow,
-  type TrendingShareAction,
-} from "@/lib/trending-entry-cta-events";
-import { entryMatchesTrendingWindow, TRENDING_WINDOW_OPTIONS } from "@/lib/trending-window-lib";
 import { cn } from "@/lib/utils";
 
 const defaultSearch = {
-  window: "all" as const,
+  window: "7d" as const,
   category: "",
 };
 
@@ -61,6 +25,17 @@ const trendingSchema = z.object({
   window: z.enum(["7d", "30d", "all"]).catch(defaultSearch.window).default(defaultSearch.window),
   category: z.string().catch(defaultSearch.category).default(defaultSearch.category),
 });
+
+type SignalState = {
+  votes?: boolean;
+  community?: boolean;
+  intent?: boolean;
+};
+
+type TrendingEntry = Entry & {
+  trendingScore?: number;
+  trendingReasons?: string[];
+};
 
 type TrendingPayload = {
   signalsAvailable?: SignalState;
@@ -84,9 +59,6 @@ const REASON_LABELS: Record<string, string> = {
   source_backed_fallback: "source-backed fallback ranking",
 };
 
-// Same card for og:image and twitter:image; the inputs are static.
-const OG_IMAGE = ogImageUrl({ title: "Trending Claude workflows", eyebrow: "Trending" });
-
 export const Route = createFileRoute("/trending")({
   validateSearch: trendingSchema,
   search: {
@@ -103,14 +75,14 @@ export const Route = createFileRoute("/trending")({
       { property: "og:url", content: absoluteUrl("/trending") },
       {
         property: "og:image",
-        content: OG_IMAGE,
+        content: ogImageUrl({ title: "Trending Claude workflows", eyebrow: "Trending" }),
       },
       { property: "og:image:type", content: "image/png" },
       { property: "og:image:width", content: "1200" },
       { property: "og:image:height", content: "630" },
       {
         name: "twitter:image",
-        content: OG_IMAGE,
+        content: ogImageUrl({ title: "Trending Claude workflows", eyebrow: "Trending" }),
       },
     ],
     links: [{ rel: "canonical", href: absoluteUrl("/trending") }],
@@ -124,6 +96,10 @@ export const Route = createFileRoute("/trending")({
   component: TrendingPage,
 });
 
+function hasLiveSignals(signals?: SignalState) {
+  return Boolean(signals?.votes || signals?.community || signals?.intent);
+}
+
 function fallbackRows(): TrendingEntry[] {
   return search({ sort: "popular" })
     .filter((entry) => entry.source !== "unverified")
@@ -136,7 +112,17 @@ function fallbackRows(): TrendingEntry[] {
 }
 
 function rowsFromPayload(payload: TrendingPayload): TrendingEntry[] {
-  return trendingRowsFromPayload(payload.entries ?? [], getEntry);
+  const rows: TrendingEntry[] = [];
+  for (const item of payload.entries ?? []) {
+    const entry = getEntry(item.category, item.slug);
+    if (!entry) continue;
+    rows.push({
+      ...entry,
+      trendingScore: Math.round(Number(item.score ?? 0)),
+      trendingReasons: item.reasons ?? [],
+    });
+  }
+  return rows;
 }
 
 function useTrendingRows() {
@@ -181,17 +167,7 @@ function useTrendingRows() {
   return { rows, mode, signals, loading };
 }
 
-function MovementCell({
-  entry,
-  mode,
-  window,
-  categoryFilter,
-}: {
-  entry: TrendingEntry;
-  mode: TrendingMode;
-  window: TrendingListWindow;
-  categoryFilter: string;
-}) {
+function MovementCell({ entry, mode }: { entry: TrendingEntry; mode: TrendingMode }) {
   const score = entry.trendingScore ?? 0;
   const reasons = entry.trendingReasons ?? [];
   const live = mode === "live";
@@ -201,20 +177,6 @@ function MovementCell({
         <TooltipTrigger asChild>
           <button
             type="button"
-            onClick={() =>
-              trackEvent(
-                trendingRankingReasonOpenAnalyticsEvent(),
-                trendingRankingReasonOpenAnalyticsData(
-                  entry.category,
-                  entry.slug,
-                  window,
-                  categoryFilter,
-                  mode,
-                  reasons.length,
-                  live && score > 0,
-                ),
-              )
-            }
             className={cn(
               "inline-flex items-center gap-1 rounded-sm font-mono text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
               live ? "text-trust-trusted" : "text-ink-muted",
@@ -251,88 +213,21 @@ function TrendingPage() {
   const latestBrief = BRIEF_ISSUES[0];
   const { rows: allRows, mode, signals, loading } = useTrendingRows();
 
-  const rows = React.useMemo(() => {
-    return allRows.filter((entry) => {
-      if (!entryMatchesTrendingWindow(entry, sp.window)) return false;
-      if (sp.category && entry.category !== sp.category) return false;
-      return true;
-    });
-  }, [allRows, sp.category, sp.window]);
+  const rows = sp.category ? allRows.filter((entry) => entry.category === sp.category) : allRows;
   const podium = rows.slice(0, 3);
   const list = rows.slice(3);
   const liveSignals = hasLiveSignals(signals);
 
   const countsByCategory = React.useMemo(() => {
     const counts: Record<string, number> = {};
-    const windowed = allRows.filter((entry) => entryMatchesTrendingWindow(entry, sp.window));
-    for (const entry of windowed) counts[entry.category] = (counts[entry.category] ?? 0) + 1;
+    for (const entry of allRows) counts[entry.category] = (counts[entry.category] ?? 0) + 1;
     return counts;
-  }, [allRows, sp.window]);
+  }, [allRows]);
 
   const set = (patch: Partial<typeof sp>) =>
     navigate({ search: (prev: typeof sp) => ({ ...prev, ...patch }) });
 
-  const onTrendingListEntryClick = React.useCallback(
-    (entry: TrendingEntry, rank: number) => {
-      trackEvent(
-        trendingListEntryAnalyticsEvent(),
-        trendingListEntryAnalyticsData(
-          entry.category,
-          entry.slug,
-          rank,
-          list.length,
-          sp.window,
-          sp.category,
-          mode,
-        ),
-      );
-    },
-    [list.length, mode, sp.category, sp.window],
-  );
-
-  const shareParams = new URLSearchParams();
-  if (sp.window !== defaultSearch.window) shareParams.set("window", sp.window);
-  if (sp.category) shareParams.set("category", sp.category);
-  const shareQuery = shareParams.toString();
-  const shareUrl = `/trending${shareQuery ? `?${shareQuery}` : ""}`;
-
-  const trackCategoryFilter = (categoryFilter: string, active: boolean, matchCount: number) => {
-    trackEvent(
-      trendingCategoryFilterAnalyticsEvent(),
-      trendingCategoryFilterAnalyticsData(
-        categoryFilter,
-        active,
-        matchCount,
-        allRows.length,
-        sp.window,
-        mode,
-      ),
-    );
-  };
-
-  const trackFilterReset = () => {
-    trackEvent(
-      trendingFilterResetAnalyticsEvent(),
-      trendingFilterResetAnalyticsData(sp.category, sp.window, mode),
-    );
-  };
-
-  const trackChrome = (
-    destination: "rss" | "brief" | "browse",
-    placement: "header" | "footer" | "empty",
-  ) => {
-    trackEvent(
-      trendingChromeAnalyticsEvent(),
-      trendingChromeAnalyticsData(destination, placement, sp.window, sp.category, mode),
-    );
-  };
-
-  const trackShare = (action: TrendingShareAction) => {
-    trackEvent(
-      trendingShareAnalyticsEvent(),
-      trendingShareAnalyticsData(sp.window, sp.category, mode, action),
-    );
-  };
+  const shareUrl = `/trending${sp.category ? `?category=${sp.category}` : ""}`;
 
   return (
     <PageContainer className="py-12">
@@ -354,47 +249,27 @@ function TrendingPage() {
               source-backed popular entries instead of simulated momentum.
             </div>
           )}
-          {latestBrief &&
-            (() => {
-              const destination = trendingChromeDestination("brief");
-              return destination?.kind === "route" ? (
-                <Link
-                  to={destination.to}
-                  onClick={() => trackChrome("brief", "header")}
-                  className="mt-3 inline-flex items-center gap-2 text-sm text-ink-muted hover:text-ink"
-                >
-                  Featured in Brief #{latestBrief.number} · {latestBrief.title} →
-                </Link>
-              ) : null;
-            })()}
+          {latestBrief && (
+            <Link
+              to="/brief"
+              className="mt-3 inline-flex items-center gap-2 text-sm text-ink-muted hover:text-ink"
+            >
+              Featured in Brief #{latestBrief.number} · {latestBrief.title} →
+            </Link>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <ShareMenu
             url={shareUrl}
             title="Trending Claude workflows"
             description="Live ranking of MCP servers, agents, skills, and commands."
-            onShareAction={(action) => {
-              if (
-                action === "copy-link" ||
-                action === "copy-markdown" ||
-                action === "system-share"
-              ) {
-                trackShare(action);
-              }
-            }}
           />
-          {(() => {
-            const destination = trendingChromeDestination("rss");
-            return destination?.kind === "href" ? (
-              <a
-                href={destination.href}
-                onClick={() => trackChrome("rss", "header")}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink-muted hover:bg-surface-2 hover:text-ink"
-              >
-                <Rss className="h-3.5 w-3.5" /> RSS
-              </a>
-            ) : null;
-          })()}
+          <a
+            href="/feeds/trending.xml"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink-muted hover:bg-surface-2 hover:text-ink"
+          >
+            <Rss className="h-3.5 w-3.5" /> RSS
+          </a>
         </div>
       </div>
 
@@ -414,69 +289,43 @@ function TrendingPage() {
           </div>
         </div>
 
-        <div className="relative mt-3 -mx-1 space-y-2">
-          <div className="overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&_[role=radiogroup]]:w-max [&_[role=radiogroup]]:flex-nowrap [&_[role=radiogroup]]:gap-1.5">
-            <FilterChipGroup label="Filter by time window" multi={false}>
-              {TRENDING_WINDOW_OPTIONS.map((option) => {
-                const active = sp.window === option.id;
-                const count = allRows.filter((entry) =>
-                  entryMatchesTrendingWindow(entry, option.id),
-                ).length;
-                return (
-                  <FilterChip
-                    key={option.id}
-                    role="radio"
-                    active={active}
-                    count={count}
-                    onClick={() => {
-                      if (active) return;
-                      set({ window: option.id });
-                    }}
-                  >
-                    {option.label}
-                  </FilterChip>
-                );
-              })}
-            </FilterChipGroup>
-          </div>
-          <div className="overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&_[role=radiogroup]]:w-max [&_[role=radiogroup]]:flex-nowrap [&_[role=radiogroup]]:gap-1.5">
-            <FilterChipGroup label="Filter by category" multi={false}>
-              <FilterChip
-                role="radio"
-                active={!sp.category}
-                onClick={() => {
-                  const windowedCount = allRows.filter((entry) =>
-                    entryMatchesTrendingWindow(entry, sp.window),
-                  ).length;
-                  trackCategoryFilter("", true, windowedCount);
-                  set({ category: "" });
-                }}
-                count={
-                  allRows.filter((entry) => entryMatchesTrendingWindow(entry, sp.window)).length
-                }
-              >
-                All
-              </FilterChip>
-              {CATEGORIES.map((category) => {
-                const count = countsByCategory[category.id] ?? 0;
-                const active = sp.category === category.id;
-                return (
-                  <FilterChip
-                    key={category.id}
-                    role="radio"
-                    active={active}
-                    disabled={count === 0 && !active}
-                    count={count}
-                    onClick={() => {
-                      trackCategoryFilter(category.id, !active, count);
-                      set({ category: active ? "" : category.id });
-                    }}
-                  >
-                    {category.label}
-                  </FilterChip>
-                );
-              })}
-            </FilterChipGroup>
+        <div className="relative mt-3 -mx-1">
+          <div className="flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              type="button"
+              onClick={() => set({ category: "" })}
+              aria-pressed={!sp.category}
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors duration-200 ease-out motion-safe:active:scale-[0.97]",
+                !sp.category
+                  ? "border-ink bg-ink text-background"
+                  : "border-border bg-surface text-ink-muted hover:text-ink",
+              )}
+            >
+              All · {allRows.length}
+            </button>
+            {CATEGORIES.map((category) => {
+              const count = countsByCategory[category.id] ?? 0;
+              const active = sp.category === category.id;
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  disabled={count === 0 && !active}
+                  onClick={() => set({ category: active ? "" : category.id })}
+                  aria-pressed={active}
+                  className={cn(
+                    "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors duration-200 ease-out motion-safe:active:scale-[0.97]",
+                    active
+                      ? "border-ink bg-ink text-background"
+                      : "border-border bg-surface text-ink-muted hover:text-ink",
+                    count === 0 && !active && "opacity-40",
+                  )}
+                >
+                  {category.label} <span className="text-ink-subtle">· {count}</span>
+                </button>
+              );
+            })}
           </div>
           <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent" />
         </div>
@@ -494,10 +343,7 @@ function TrendingPage() {
           </p>
           <button
             type="button"
-            onClick={() => {
-              trackFilterReset();
-              set({ window: "all", category: "" });
-            }}
+            onClick={() => set({ window: "7d", category: "" })}
             className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-md bg-ink px-3 text-xs font-medium text-background transition-transform hover:bg-ink/90 active:translate-y-px"
           >
             Reset filters
@@ -513,55 +359,21 @@ function TrendingPage() {
               <div className="font-display text-3xl font-semibold tabular-nums text-ink-subtle">
                 {String(index + 4).padStart(2, "0")}
               </div>
-              <div className="min-w-0">
+              <Link
+                to="/entry/$category/$slug"
+                params={{ category: entry.category, slug: entry.slug }}
+                className="min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              >
                 <div className="flex flex-wrap items-center gap-2">
-                  <CategoryPill
-                    asLink
-                    category={entry.category}
-                    onNavigate={() =>
-                      trackEvent(
-                        badgeChromeCategoryAnalyticsEvent(),
-                        badgeChromeCategoryAnalyticsData(entry.category, "trending-list"),
-                      )
-                    }
-                  >
-                    {entry.category}
-                  </CategoryPill>
-                  <TrustBadge
-                    level={entry.trust}
-                    asLink
-                    onNavigate={() =>
-                      trackEvent(
-                        badgeChromeTrustAnalyticsEvent(),
-                        badgeChromeTrustAnalyticsData(entry.trust, "trending-list"),
-                      )
-                    }
-                  />
-                  <SourceBadge
-                    status={entry.source}
-                    asLink
-                    onNavigate={() =>
-                      trackEvent(
-                        badgeChromeSourceAnalyticsEvent(),
-                        badgeChromeSourceAnalyticsData(entry.source, "trending-list"),
-                      )
-                    }
-                  />
-                  <InstallRiskBadge entry={entry} size="xs" asLink surface="trending-list" />
-                  <NotesPresenceChips entry={entry} asLink surface="trending-list" />
+                  <CategoryPill>{entry.category}</CategoryPill>
+                  <TrustBadge level={entry.trust} />
+                  <SourceBadge status={entry.source} />
                 </div>
-                <Link
-                  to="/entry/$category/$slug"
-                  params={{ category: entry.category, slug: entry.slug }}
-                  onClick={() => onTrendingListEntryClick(entry, index + 4)}
-                  className="mt-1 block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                >
-                  <div className="font-display text-base font-semibold text-ink hover:underline">
-                    {entry.title}
-                  </div>
-                  <p className="line-clamp-1 text-sm text-ink-muted">{entry.description}</p>
-                </Link>
-              </div>
+                <div className="mt-1 font-display text-base font-semibold text-ink hover:underline">
+                  {entry.title}
+                </div>
+                <p className="line-clamp-1 text-sm text-ink-muted">{entry.description}</p>
+              </Link>
               <div className="hidden flex-col items-end gap-0.5 font-mono text-xs text-ink-muted tabular-nums sm:flex">
                 {entry.repoStats?.stars !== undefined && (
                   <div className="flex items-center gap-1" title="Source repository stars">
@@ -572,12 +384,7 @@ function TrendingPage() {
                   {entry.source === "unverified" ? "unverified source" : "source-backed"}
                 </div>
               </div>
-              <MovementCell
-                entry={entry}
-                mode={mode}
-                window={sp.window}
-                categoryFilter={sp.category}
-              />
+              <MovementCell entry={entry} mode={mode} />
             </li>
           ))}
         </ol>
@@ -588,48 +395,24 @@ function TrendingPage() {
           <Rss className="h-4 w-4" /> Subscribe to the trending feed
         </div>
         <div className="flex flex-wrap gap-2">
-          {(
-            [
-              { destination: "rss" as const, label: "RSS", icon: true, primary: false },
-              {
-                destination: "brief" as const,
-                label: "Weekly Brief →",
-                icon: false,
-                primary: false,
-              },
-              { destination: "browse" as const, label: "Browse all", icon: false, primary: true },
-            ] as const
-          ).map((item) => {
-            const destination = trendingChromeDestination(item.destination);
-            if (!destination) return null;
-            const className = item.primary
-              ? "inline-flex h-8 items-center gap-1.5 rounded-md bg-ink px-3 text-xs font-medium text-background transition-transform hover:opacity-90 active:translate-y-px"
-              : "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink transition-transform hover:bg-surface-2 active:translate-y-px";
-            if (destination.kind === "href") {
-              return (
-                <a
-                  key={item.destination}
-                  href={destination.href}
-                  onClick={() => trackChrome(item.destination, "footer")}
-                  className={className}
-                >
-                  {item.icon ? <Rss className="h-3.5 w-3.5" /> : null}
-                  {item.label}
-                </a>
-              );
-            }
-            return (
-              <Link
-                key={item.destination}
-                to={destination.to}
-                onClick={() => trackChrome(item.destination, "footer")}
-                className={className}
-              >
-                {item.label}
-                {item.destination === "browse" ? <ArrowRight className="h-3.5 w-3.5" /> : null}
-              </Link>
-            );
-          })}
+          <a
+            href="/feeds/trending.xml"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink transition-transform hover:bg-surface-2 active:translate-y-px"
+          >
+            <Rss className="h-3.5 w-3.5" /> RSS
+          </a>
+          <Link
+            to="/brief"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink transition-transform hover:bg-surface-2 active:translate-y-px"
+          >
+            Weekly Brief →
+          </Link>
+          <Link
+            to="/browse"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-ink px-3 text-xs font-medium text-background transition-transform hover:opacity-90 active:translate-y-px"
+          >
+            Browse all <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </div>
     </PageContainer>

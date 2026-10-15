@@ -3,13 +3,7 @@ import { PLATFORM_LABEL, type Platform } from "@/types/registry";
 import { ENTRIES } from "@/data/entries";
 import { PageContainer } from "@/components/page-container";
 import { PageHeader } from "@/components/page-header";
-import { trackEvent } from "@/lib/analytics";
-import {
-  platformIndexSelectAnalyticsData,
-  platformIndexSelectAnalyticsEvent,
-  platformIndexSelectDestination,
-} from "@/lib/directory-hub-cta-events";
-import { breadcrumbScript, itemListScript } from "@/lib/seo-jsonld";
+import { stringifyJsonLd } from "@/lib/json-ld";
 import { absoluteUrl } from "@/lib/seo";
 
 const PLATFORMS = Object.keys(PLATFORM_LABEL) as Platform[];
@@ -42,20 +36,18 @@ export const Route = createFileRoute("/for/")({
         { name: "twitter:card", content: "summary_large_image" },
       ],
       links: [{ rel: "canonical", href: url }],
-      // BreadcrumbList + ItemList for every /for/$platform link rendered below —
-      // same platform set /platforms already emits (#5630).
       scripts: [
-        breadcrumbScript([
-          { name: "Directory", path: "/browse" },
-          { name: "Platforms", path: "/for" },
-        ]),
-        itemListScript(
-          PLATFORMS.map((id) => ({
-            name: PLATFORM_LABEL[id],
-            path: `/for/${id}`,
-          })),
-          { name: "Claude platforms" },
-        ),
+        {
+          type: "application/ld+json",
+          children: stringifyJsonLd({
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Directory", item: absoluteUrl("/browse") },
+              { "@type": "ListItem", position: 2, name: "Platforms", item: url },
+            ],
+          }),
+        },
       ],
     };
   },
@@ -73,34 +65,19 @@ function PlatformsIndex() {
         description="Pick your editor or runtime to see every compatible Claude resource in the directory."
       />
       <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {PLATFORMS.map((p, rowIndex) => {
-          const destination = platformIndexSelectDestination(p);
-          if (!destination) return null;
-          return (
-            <Link
-              key={p}
-              to={destination.to}
-              params={destination.params}
-              onClick={() =>
-                trackEvent(
-                  platformIndexSelectAnalyticsEvent(),
-                  platformIndexSelectAnalyticsData(
-                    p,
-                    counts.get(p) ?? 0,
-                    rowIndex,
-                    PLATFORMS.length,
-                  ),
-                )
-              }
-              className="group flex items-center justify-between rounded-xl border border-border bg-surface p-4 hover:bg-surface-2"
-            >
-              <span className="font-display text-base font-semibold text-ink">
-                {PLATFORM_LABEL[p]}
-              </span>
-              <span className="font-mono text-xs text-ink-subtle">{counts.get(p) ?? 0}</span>
-            </Link>
-          );
-        })}
+        {PLATFORMS.map((p) => (
+          <Link
+            key={p}
+            to="/for/$platform"
+            params={{ platform: p }}
+            className="group flex items-center justify-between rounded-xl border border-border bg-surface p-4 hover:bg-surface-2"
+          >
+            <span className="font-display text-base font-semibold text-ink">
+              {PLATFORM_LABEL[p]}
+            </span>
+            <span className="font-mono text-xs text-ink-subtle">{counts.get(p) ?? 0}</span>
+          </Link>
+        ))}
       </div>
     </PageContainer>
   );

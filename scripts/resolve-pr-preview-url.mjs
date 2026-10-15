@@ -2,15 +2,6 @@
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import {
-  commentMatchesHeadSha,
-  deploymentQueries,
-  headSha,
-  prNumber,
-  previewCandidatesFromEnv,
-} from "./lib/preview-url-event.mjs";
-import { isHeyClaudePreviewHost } from "./lib/preview-url-host.mjs";
-
 const githubUrlPattern = /^https:\/\/github\.com\//i;
 const blockedPreviewHosts = new Set([
   "app.coderabbit.ai",
@@ -23,6 +14,23 @@ const blockedPreviewHosts = new Set([
 ]);
 const nonDeploymentSourcePattern =
   /(?:coderabbit|superagent|contributor trust|pipelock|codeql|trunk|security scan|repo scan)/i;
+
+// A preview URL for this project must be a HeyClaude PRODUCTION host. This
+// Cloudflare account hosts several unrelated projects, so GitHub
+// deployment/status lookups can surface a sibling project's URL (e.g.
+// gittensory.aethereal.dev) — running the artifact contract against that is
+// wrong. Accept only the production site and Cloudflare Workers Builds preview
+// aliases for the prod worker (<version>-heyclaude-prod.<subdomain>.workers.dev).
+// Deliberately excludes the retired dev worker (heyclaude-dev.*.workers.dev and
+// dev.heyclau.de).
+function isHeyClaudePreviewHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return (
+    host === "heyclau.de" ||
+    host === "www.heyclau.de" ||
+    (host.endsWith(".workers.dev") && host.includes("heyclaude-prod"))
+  );
+}
 
 export function normalizeBaseUrl(value) {
   const trimmed = String(value || "").trim();
@@ -80,19 +88,29 @@ function readGithubEvent(eventPath) {
   return JSON.parse(fs.readFileSync(eventPath, "utf8"));
 }
 
+function previewCandidatesFromEnv(env = process.env) {
+  const candidates = [
+    { url: env.PREVIEW_DEPLOYMENT_URL, source: "PREVIEW_DEPLOYMENT_URL" },
+    {
+      url: env.DEPLOYMENT_PREVIEW_BASE_URL,
+      source: "DEPLOYMENT_PREVIEW_BASE_URL",
+    },
+    { url: env.CLOUDFLARE_PREVIEW_URL, source: "CLOUDFLARE_PREVIEW_URL" },
+  ];
+  if (env.ALLOW_SHARED_DEV_WORKER_PREVIEW === "1") {
+    candidates.push({
+      url: env.CLOUDFLARE_DEV_WORKER_URL,
+      source: "CLOUDFLARE_DEV_WORKER_URL",
+    });
+  }
+  return candidates;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }
-
-// Per-request bound for GitHub API calls. The poll loop only checks its own
-// `deadline` *between* attempts, so an un-bounded `fetch` that hangs mid-request
-// (network stall, slow TLS, GitHub degraded) could outlast the whole wait budget.
-// 10s is comfortably shorter than the default 15s poll interval and any realistic
-// wait window, so a stalled request fails fast and the loop can retry or exit
-// cleanly instead of blocking indefinitely.
-const GITHUB_FETCH_TIMEOUT_MS = 10_000;
 
 async function githubJson(pathname, env = process.env) {
   const token = env.GITHUB_TOKEN;
@@ -107,12 +125,27 @@ async function githubJson(pathname, env = process.env) {
       authorization: `Bearer ${token}`,
       "x-github-api-version": "2022-11-28",
     },
-    signal: AbortSignal.timeout(GITHUB_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`GitHub API ${pathname} returned ${response.status}`);
   }
   return response.json();
+}
+
+function deploymentQueries(event, env = process.env) {
+  const pullRequest = event.pull_request || {};
+  return [
+    pullRequest.head?.sha ? { sha: pullRequest.head.sha } : null,
+    pullRequest.head?.ref ? { ref: pullRequest.head.ref } : null,
+    env.GITHUB_HEAD_REF ? { ref: env.GITHUB_HEAD_REF } : null,
+    env.GITHUB_REF_NAME ? { ref: env.GITHUB_REF_NAME } : null,
+    env.GITHUB_SHA ? { sha: env.GITHUB_SHA } : null,
+  ].filter(Boolean);
+}
+
+function headSha(event, env = process.env) {
+  const pullRequest = event.pull_request || {};
+  return pullRequest.head?.sha || env.GITHUB_SHA || "";
 }
 
 export async function resolveFromGithubDeployments(event, env = process.env) {
@@ -195,6 +228,23 @@ export async function resolveFromGithubStatuses(event, env = process.env) {
         ])
     : [];
   return selectPreviewUrl(checkCandidates);
+}
+
+function prNumber(event, env = process.env) {
+  const fromEvent = event?.pull_request?.number ?? event?.number;
+  if (fromEvent) return Number(fromEvent);
+  // refs/pull/<n>/merge (or /head) when no event file is present.
+  const match = String(env.GITHUB_REF || "").match(/refs\/pull\/(\d+)\//);
+  return match ? Number(match[1]) : null;
+}
+
+function commentMatchesHeadSha(body, event, env = process.env) {
+  const sha = headSha(event, env).trim().toLowerCase();
+  if (!sha) return true;
+  const normalizedBody = String(body || "").toLowerCase();
+  return [sha, sha.slice(0, 8), sha.slice(0, 7)].some(
+    (candidate) => candidate.length >= 7 && normalizedBody.includes(candidate),
+  );
 }
 
 // Cloudflare Workers Builds publishes per-PR preview URLs ONLY in a pull-request COMMENT (by

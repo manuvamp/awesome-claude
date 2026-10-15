@@ -5,25 +5,9 @@ import {
 } from "@/components/contributor-attribution";
 import { CLAIM_LABEL } from "@/types/registry";
 import { Github, ExternalLink } from "lucide-react";
-import { trackEvent, outboundHost } from "@/lib/analytics";
-import {
-  provenanceLinkAnalyticsData,
-  provenanceLinkAnalyticsEvent,
-  type ProvenanceLinkKind,
-} from "@/lib/provenance-block-cta-events";
 
 export function ProvenanceBlock({ entry }: { entry: Entry }) {
   const claim = entry.claimStatus ?? (entry.claimed ? "verified" : "unclaimed");
-  const submissionUrl = entry.sourceSubmissionUrl;
-  const importPrUrl = entry.importPrUrl;
-
-  const onProvenanceOpen = (href: string, kind: ProvenanceLinkKind) => {
-    trackEvent(
-      provenanceLinkAnalyticsEvent(),
-      provenanceLinkAnalyticsData(entry.category, entry.slug, kind, outboundHost(href)),
-    );
-  };
-
   return (
     <div className="rounded-xl border border-border bg-surface p-4 text-xs text-ink-muted">
       <div className="eyebrow mb-3">Provenance</div>
@@ -49,23 +33,21 @@ export function ProvenanceBlock({ entry }: { entry: Entry }) {
         <Row label="Claim" value={CLAIM_LABEL[claim]} />
       </dl>
       <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3 text-xs">
-        {submissionUrl && (
+        {entry.sourceSubmissionUrl && (
           <a
-            href={submissionUrl}
+            href={entry.sourceSubmissionUrl}
             target="_blank"
             rel="noreferrer"
-            onClick={() => onProvenanceOpen(submissionUrl, "submission")}
             className="inline-flex items-center gap-1 text-ink-muted hover:text-ink"
           >
             Original submission <ExternalLink className="h-3 w-3" />
           </a>
         )}
-        {importPrUrl && (
+        {entry.importPrUrl && (
           <a
-            href={importPrUrl}
+            href={entry.importPrUrl}
             target="_blank"
             rel="noreferrer"
-            onClick={() => onProvenanceOpen(importPrUrl, "import-pr")}
             className="inline-flex items-center gap-1 text-ink-muted hover:text-ink"
           >
             Import PR <ExternalLink className="h-3 w-3" />

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Entry } from "@/types/registry";
 import {
-  compareDecisionDivergingCount,
   compareDecisionSummary,
   comparisonDecisionRows,
   displayCompareSignal,
@@ -62,17 +61,11 @@ describe("compare table decision rows", () => {
       "Package trust",
     ]);
     expect(hasCompareDecisionDivergence([reviewed, baseline])).toBe(true);
-    const entries = [reviewed, baseline];
-    const summary = compareDecisionSummary(entries);
-    expect(summary).toEqual({
+    expect(compareDecisionSummary([reviewed, baseline])).toEqual({
       comparedCount: 2,
       divergingCount: 1,
       divergingLabels: ["Review status"],
     });
-    expect(summary.divergingCount).toBe(compareDecisionDivergingCount(entries));
-    expect(hasCompareDecisionDivergence(entries)).toBe(
-      compareDecisionDivergingCount(entries) > 0,
-    );
   });
 
   it("detects submitter present-versus-missing divergence", () => {

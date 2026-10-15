@@ -2,26 +2,13 @@ import { AlertTriangle, ArrowBigUp, Check, Eye, LoaderCircle } from "lucide-reac
 import * as React from "react";
 
 import type { Category } from "@/types/registry";
-import {
-  type CommunityCounts,
-  ZERO_COMMUNITY,
-  asCommunityCounts,
-} from "@/lib/entry-signals-counts-lib";
-import { defaultLocalStorage } from "@/lib/dossier-prefs-lib";
-import { communityTargetKey, entryKey } from "@/lib/entry-signals-keys-lib";
-import {
-  getClientId,
-  readActiveCommunity,
-  writeActiveCommunity,
-} from "@/lib/entry-signals-storage-lib";
-import { trackEvent } from "@/lib/analytics";
-import {
-  entrySignalsCommunityAnalyticsData,
-  entrySignalsCommunityAnalyticsEvent,
-  entrySignalsVoteAnalyticsData,
-  entrySignalsVoteAnalyticsEvent,
-} from "@/lib/entry-signals-panel-cta-events";
 import { cn } from "@/lib/utils";
+
+type CommunityCounts = {
+  used: number;
+  works: number;
+  broken: number;
+};
 
 type SignalState = {
   loading: boolean;
@@ -33,6 +20,52 @@ type SignalState = {
   activeCommunity: Partial<Record<keyof CommunityCounts, boolean>>;
 };
 
+const ZERO_COMMUNITY: CommunityCounts = { used: 0, works: 0, broken: 0 };
+const CLIENT_STORAGE_KEY = "hc:client-id";
+const COMMUNITY_STORAGE_PREFIX = "hc:community:";
+
+function entryKey(category: Category, slug: string) {
+  return `${category}:${slug}`;
+}
+
+function communityTargetKey(category: Category, slug: string) {
+  return `entry:${category}/${slug}`;
+}
+
+function getClientId() {
+  if (typeof window === "undefined") return "";
+  const existing = window.localStorage.getItem(CLIENT_STORAGE_KEY);
+  if (existing && /^[a-zA-Z0-9_-]{16,96}$/.test(existing)) return existing;
+
+  const generated =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? `hc-${crypto.randomUUID()}`
+      : `hc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 18)}`;
+  window.localStorage.setItem(CLIENT_STORAGE_KEY, generated);
+  return generated;
+}
+
+function readActiveCommunity(targetKey: string): SignalState["activeCommunity"] {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(`${COMMUNITY_STORAGE_PREFIX}${targetKey}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      used: parsed.used === true,
+      works: parsed.works === true,
+      broken: parsed.broken === true,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeActiveCommunity(targetKey: string, active: SignalState["activeCommunity"]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(`${COMMUNITY_STORAGE_PREFIX}${targetKey}`, JSON.stringify(active));
+}
+
 async function postJson(path: string, payload: unknown) {
   const response = await fetch(path, {
     method: "POST",
@@ -41,6 +74,15 @@ async function postJson(path: string, payload: unknown) {
   });
   if (!response.ok) throw new Error(`${path} returned ${response.status}`);
   return response.json() as Promise<Record<string, unknown>>;
+}
+
+function asCommunityCounts(value: unknown): CommunityCounts {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    used: Number(source.used ?? 0) || 0,
+    works: Number(source.works ?? 0) || 0,
+    broken: Number(source.broken ?? 0) || 0,
+  };
 }
 
 export function EntrySignalsPanel({ category, slug }: { category: Category; slug: string }) {
@@ -58,11 +100,11 @@ export function EntrySignalsPanel({ category, slug }: { category: Category; slug
 
   React.useEffect(() => {
     let cancelled = false;
-    const clientId = getClientId(defaultLocalStorage());
+    const clientId = getClientId();
     setState((current) => ({
       ...current,
       loading: true,
-      activeCommunity: readActiveCommunity(defaultLocalStorage(), targetKey),
+      activeCommunity: readActiveCommunity(targetKey),
     }));
 
     Promise.allSettled([
@@ -105,17 +147,8 @@ export function EntrySignalsPanel({ category, slug }: { category: Category; slug
   }, [key, targetKey]);
 
   const toggleVote = async () => {
-    const clientId = getClientId(defaultLocalStorage());
+    const clientId = getClientId();
     const nextVote = !state.voted;
-    trackEvent(
-      entrySignalsVoteAnalyticsEvent(),
-      entrySignalsVoteAnalyticsData(
-        category,
-        slug,
-        nextVote,
-        Math.max(0, state.voteCount + (nextVote ? 1 : -1)),
-      ),
-    );
     setState((current) => ({
       ...current,
       voted: nextVote,
@@ -144,14 +177,10 @@ export function EntrySignalsPanel({ category, slug }: { category: Category; slug
   };
 
   const toggleCommunity = async (signalType: keyof CommunityCounts) => {
-    const clientId = getClientId(defaultLocalStorage());
+    const clientId = getClientId();
     const active = !state.activeCommunity[signalType];
-    trackEvent(
-      entrySignalsCommunityAnalyticsEvent(),
-      entrySignalsCommunityAnalyticsData(category, slug, signalType, active),
-    );
     const nextActive = { ...state.activeCommunity, [signalType]: active };
-    writeActiveCommunity(defaultLocalStorage(), targetKey, nextActive);
+    writeActiveCommunity(targetKey, nextActive);
     setState((current) => ({
       ...current,
       activeCommunity: nextActive,
@@ -176,7 +205,7 @@ export function EntrySignalsPanel({ category, slug }: { category: Category; slug
       }));
     } catch {
       const rolledBack = { ...state.activeCommunity };
-      writeActiveCommunity(defaultLocalStorage(), targetKey, rolledBack);
+      writeActiveCommunity(targetKey, rolledBack);
       setState((current) => ({
         ...current,
         communityAvailable: false,
@@ -276,7 +305,6 @@ function SignalButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-pressed={Boolean(active)}
       data-active={active || undefined}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors duration-200 ease-out hover:text-ink disabled:cursor-wait disabled:opacity-60",

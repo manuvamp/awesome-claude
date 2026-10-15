@@ -299,34 +299,6 @@ describe("buildContentEntryFromMdx", () => {
     expect(entry.repoUrl).toBeNull();
   });
 
-  it("canonicalizes a GitHub repoUrl and preserves a non-GitHub repoUrl", () => {
-    const repoEntry = (slug: string, repoUrl: string) =>
-      buildEntry({
-        source: mdx(
-          [
-            `title: ${slug}`,
-            `slug: ${slug}`,
-            "description: Entry exercising repoUrl handling in the builder.",
-            "dateAdded: 2026-01-03",
-            `repoUrl: ${repoUrl}`,
-          ].join("\n"),
-        ),
-      });
-
-    // GitHub URLs still get the canonical owner/repo-derived URL.
-    expect(repoEntry("gh", "https://github.com/Acme/Widget").repoUrl).toBe(
-      "https://github.com/Acme/Widget",
-    );
-    // A valid non-GitHub repo URL now survives instead of being wiped to null.
-    expect(repoEntry("gl", "https://gitlab.com/acme/widget").repoUrl).toBe(
-      "https://gitlab.com/acme/widget",
-    );
-    // A credential-embedded URL is not a clean public URL -> stays null.
-    expect(
-      repoEntry("bad", "https://user:pass@gitlab.com/acme/widget").repoUrl,
-    ).toBeNull();
-  });
-
   it("builds a first-party skill package with sha256 and defaults", () => {
     const entry = buildEntry({
       source: mdx(
@@ -636,46 +608,5 @@ describe("public wrapper re-exports", () => {
       normalizePlatformCompatibility,
     );
     expect(wrapper.DEFAULT_DIRECTORY_REPO_URL).toBe(DEFAULT_DIRECTORY_REPO_URL);
-  });
-});
-
-describe("buildContentEntryFromMdx optional-field defaults", () => {
-  it("falls back to 'skill' when the slug is only whitespace", () => {
-    const platforms = buildDefaultSkillPlatformCompatibility(
-      { slug: "   " },
-      {},
-    );
-    expect(platforms[4].adapterPath).toBe(
-      "/data/skill-adapters/cursor/skill.mdc",
-    );
-  });
-
-  it("defaults the optional fields when the frontmatter omits them", () => {
-    const entry = buildEntry({
-      fileName: "min.mdx",
-      source: mdx(["title: Minimal", "dateAdded: 2026-01-03"].join("\n")),
-    });
-    // slug derived from the file name; description defaults to ""
-    expect(entry.slug).toBe("min");
-    expect(entry.description).toBe("");
-    // optional snippets/metadata are dropped (undefined) rather than emitted
-    expect(entry.cardDescription).toBeUndefined();
-    expect(entry.commandSyntax).toBeUndefined();
-    expect(entry.retrievalSources).toBeUndefined();
-  });
-
-  it("uses a frontmatter commandSyntax when none is inferred", () => {
-    const entry = buildEntry({
-      fileName: "cmd.mdx",
-      source: mdx(
-        [
-          "title: Cmd",
-          "slug: cmd",
-          "commandSyntax: /deploy [env]",
-          "dateAdded: 2026-01-03",
-        ].join("\n"),
-      ),
-    });
-    expect(entry.commandSyntax).toBe("/deploy [env]");
   });
 });

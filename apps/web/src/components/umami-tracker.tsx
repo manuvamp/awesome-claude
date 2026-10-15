@@ -1,8 +1,6 @@
 import * as React from "react";
 import { useRouterState } from "@tanstack/react-router";
 
-import { currentUrlPath, externalReferrer } from "@/lib/umami-nav-lib";
-
 type UmamiPayload = {
   website: string;
   screen: string;
@@ -37,6 +35,19 @@ type FirstPartyUmami = {
 const COLLECTOR_URL = "/u/api/send";
 const SENSITIVE_PAGEVIEW_PATHS = new Set(["/brief/approve"]);
 
+function currentUrlPath() {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+function externalReferrer() {
+  if (!document.referrer) return "";
+  try {
+    return new URL(document.referrer).origin === window.location.origin ? "" : document.referrer;
+  } catch {
+    return "";
+  }
+}
+
 export function isAllowedUmamiHost(hostname: string, allowedHosts: readonly string[]) {
   if (allowedHosts.length === 0) return true;
   const normalized = hostname.toLowerCase();
@@ -55,7 +66,7 @@ export function buildUmamiPayload(
     language: navigator.language,
     title: document.title,
     hostname: window.location.hostname,
-    url: currentUrlPath(window.location),
+    url: currentUrlPath(),
     referrer,
     ...(event ? { name: event } : {}),
     ...(data ? { data } : {}),
@@ -150,10 +161,9 @@ export function UmamiTracker({
       return;
     }
 
-    const current = currentUrlPath(window.location);
+    const current = currentUrlPath();
     if (previousUrlRef.current === current) return;
-    referrerRef.current =
-      previousUrlRef.current || externalReferrer(document.referrer, window.location.origin);
+    referrerRef.current = previousUrlRef.current || externalReferrer();
     previousUrlRef.current = current;
     window.umami?.track();
     referrerRef.current = current;

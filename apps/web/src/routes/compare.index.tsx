@@ -1,7 +1,6 @@
 import * as React from "react";
 import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router";
 import { absoluteUrl } from "@/lib/seo";
-import { breadcrumbScript, itemListScript } from "@/lib/seo-jsonld";
 import { z } from "zod";
 import { X, ArrowRight, ExternalLink, Plus, Search as SearchIcon } from "lucide-react";
 import { ENTRIES } from "@/data/entries";
@@ -12,86 +11,29 @@ import { CopyButton } from "@/components/copy-button";
 import { COMPARISON_ROWS as ROWS } from "@/components/comparison-table";
 import { useCompare } from "@/lib/compare";
 import { resolveCompareParam, serializeCompareItems } from "@/lib/compare-selection";
-import { recordCompareIntentEvent } from "@/lib/compare-entry-actions";
-import { COMPARE_PAGE_SURFACE, type CompareAction } from "@/lib/compare-page-actions-ui-lib";
-import { comparePageActionsForEntry } from "@/lib/compare-page-actions-interactive-ui-lib";
-import { comparePageInteractiveUiState } from "@/lib/compare-page-interactive-ui-lib";
-import { compareDecisionBriefState } from "@/lib/compare-decision-brief";
 import {
-  compareScenarioRankingState,
-  type CompareScenarioId,
-} from "@/lib/compare-scenario-ranking";
-import { compareEvidenceGapsState } from "@/lib/compare-evidence-gaps";
+  compareActionsDiverge,
+  recordCompareIntentEvent,
+  resolveCompareEntryActions,
+  type CompareAction,
+} from "@/lib/compare-entry-actions";
+import { comparePageBannerTexts } from "@/lib/compare-page-summary";
+import { comparePageShareUrlFromEntries } from "@/lib/compare-share-link";
 import {
-  compareRolloutReadinessState,
-  type RolloutPresetId,
-} from "@/lib/compare-rollout-readiness";
+  compareFeaturedInteractiveLinkLabel,
+  compareFeaturedInteractiveSearch,
+  resolveComparisonRefs,
+} from "@/lib/compare-featured-link";
 import {
-  compareOperationalFitHeatmapState,
-  type OperationalFitPresetId,
-} from "@/lib/compare-operational-fit-heatmap";
-import {
-  compareDeploymentRiskMapState,
-  type DeploymentRiskPresetId,
-} from "@/lib/compare-deployment-risk-map";
-import {
-  compareMitigationPriorityState,
-  type MitigationPriorityPresetId,
-} from "@/lib/compare-mitigation-priority";
+  compareEmptyStateDescription,
+  compareInvalidUrlHint,
+  compareSingleItemHintText,
+} from "@/lib/compare-empty-guidance";
 import { trackEvent, entryEventKey } from "@/lib/analytics";
-import {
-  comparePageDecisionPresetAnalyticsData,
-  comparePageDecisionPresetAnalyticsEvent,
-  comparePageDecisionPresetSurface,
-} from "@/lib/compare-page-decision-preset-cta-events";
-import {
-  comparePageScenarioAnalyticsData,
-  comparePageScenarioAnalyticsEvent,
-  comparePageScenarioSurface,
-} from "@/lib/compare-page-scenario-cta-events";
-import {
-  comparePageDecisionBriefSurface,
-  comparePageEvidenceGapsSurface,
-  comparePanelEntryDestination,
-} from "@/lib/compare-panel-entry-cta-events";
-import {
-  comparePageShareLinkCopyAnalyticsData,
-  comparePageShareLinkCopyAnalyticsEvent,
-} from "@/lib/compare-page-share-link-cta-events";
-import {
-  comparePageEmptyEgressAnalyticsData,
-  comparePageEmptyEgressAnalyticsEvent,
-  comparePageEmptyEgressDestination,
-} from "@/lib/compare-page-empty-egress-cta-events";
-import {
-  comparePageAddOpenAnalyticsData,
-  comparePageAddOpenAnalyticsEvent,
-  comparePageAddSelectAnalyticsData,
-  comparePageAddSelectAnalyticsEvent,
-  comparePageClearAnalyticsData,
-  comparePageClearAnalyticsEvent,
-  comparePageOpenDossierAnalyticsData,
-  comparePageOpenDossierAnalyticsEvent,
-  comparePageRemoveAnalyticsData,
-  comparePageRemoveAnalyticsEvent,
-} from "@/lib/compare-page-selection-cta-events";
-import {
-  claimCtaAnalyticsData,
-  claimCtaAnalyticsEvent,
-  claimCtaDestination,
-} from "@/lib/conversion-cta-events";
 import { sameEntry } from "@/lib/entry-identity";
 import { search } from "@/data/search";
 import { cn } from "@/lib/utils";
 import type { Entry } from "@/types/registry";
-import { CompareDecisionBriefPanel } from "@/components/compare-decision-brief-panel";
-import { CompareScenarioRankingPanel } from "@/components/compare-scenario-ranking-panel";
-import { CompareEvidenceGapsPanel } from "@/components/compare-evidence-gaps-panel";
-import { CompareRolloutReadinessPanel } from "@/components/compare-rollout-readiness-panel";
-import { CompareOperationalFitHeatmapPanel } from "@/components/compare-operational-fit-heatmap-panel";
-import { CompareDeploymentRiskMapPanel } from "@/components/compare-deployment-risk-map-panel";
-import { CompareMitigationPriorityPanel } from "@/components/compare-mitigation-priority-panel";
-import { NewsletterInline } from "@/components/newsletter-inline";
 
 const defaultSearch = { ids: "" };
 
@@ -113,22 +55,8 @@ export const Route = createFileRoute("/compare/")({
         property: "og:description",
         content: "Side-by-side comparison of Claude workflow resources.",
       },
-      { property: "og:url", content: absoluteUrl("/compare") },
     ],
     links: [{ rel: "canonical", href: absoluteUrl("/compare") }],
-    scripts: [
-      breadcrumbScript([
-        { name: "Directory", path: "/browse" },
-        { name: "Compare", path: "/compare" },
-      ]),
-      itemListScript(
-        COMPARISONS.map((comparison) => ({
-          name: comparison.title,
-          path: `/compare/${comparison.slug}`,
-        })),
-        { name: "HeyClaude comparisons" },
-      ),
-    ],
   }),
   component: ComparePage,
 });
@@ -151,94 +79,9 @@ function ComparePage() {
   const items = compare.items;
   const [hoverRow, setHoverRow] = React.useState<number | null>(null);
   const [pickerOpen, setPickerOpen] = React.useState(false);
-  const { pageUi, emptyUi, actionRowDiverges, actionCells } = React.useMemo(
-    () => comparePageInteractiveUiState(items, sp.ids, COMPARISONS, ENTRIES),
-    [items, sp.ids],
-  );
-  const decisionBrief = React.useMemo(() => compareDecisionBriefState(items), [items]);
-  const [scenario, setScenario] = React.useState<CompareScenarioId>("balanced");
-  const [rolloutPreset, setRolloutPreset] = React.useState<RolloutPresetId>("team");
-  const [fitPreset, setFitPreset] = React.useState<OperationalFitPresetId>("team-default");
-  const [riskPreset, setRiskPreset] = React.useState<DeploymentRiskPresetId>("balanced");
-  const [mitigationPreset, setMitigationPreset] =
-    React.useState<MitigationPriorityPresetId>("balanced");
-  const scenarioRanking = React.useMemo(
-    () => compareScenarioRankingState(items, scenario),
-    [items, scenario],
-  );
-  const evidenceGaps = React.useMemo(() => compareEvidenceGapsState(items), [items]);
-  const rolloutReadiness = React.useMemo(
-    () => compareRolloutReadinessState(items, rolloutPreset),
-    [items, rolloutPreset],
-  );
-  const operationalFitHeatmap = React.useMemo(
-    () => compareOperationalFitHeatmapState(items, fitPreset),
-    [items, fitPreset],
-  );
-  const deploymentRiskMap = React.useMemo(
-    () => compareDeploymentRiskMapState(items, riskPreset),
-    [items, riskPreset],
-  );
-  const mitigationPriority = React.useMemo(
-    () => compareMitigationPriorityState(items, mitigationPreset),
-    [items, mitigationPreset],
-  );
-
-  const onScenarioSelect = React.useCallback(
-    (next: CompareScenarioId) => {
-      if (next === scenario) return;
-      trackEvent(
-        comparePageScenarioAnalyticsEvent(),
-        comparePageScenarioAnalyticsData(next, items.length),
-      );
-      setScenario(next);
-    },
-    [items.length, scenario],
-  );
-  const onRolloutPresetSelect = React.useCallback(
-    (preset: RolloutPresetId) => {
-      if (preset === rolloutPreset) return;
-      trackEvent(
-        comparePageDecisionPresetAnalyticsEvent(),
-        comparePageDecisionPresetAnalyticsData("rollout-readiness", preset, items.length),
-      );
-      setRolloutPreset(preset);
-    },
-    [items.length, rolloutPreset],
-  );
-  const onFitPresetSelect = React.useCallback(
-    (preset: OperationalFitPresetId) => {
-      if (preset === fitPreset) return;
-      trackEvent(
-        comparePageDecisionPresetAnalyticsEvent(),
-        comparePageDecisionPresetAnalyticsData("operational-fit", preset, items.length),
-      );
-      setFitPreset(preset);
-    },
-    [fitPreset, items.length],
-  );
-  const onRiskPresetSelect = React.useCallback(
-    (preset: DeploymentRiskPresetId) => {
-      if (preset === riskPreset) return;
-      trackEvent(
-        comparePageDecisionPresetAnalyticsEvent(),
-        comparePageDecisionPresetAnalyticsData("deployment-risk", preset, items.length),
-      );
-      setRiskPreset(preset);
-    },
-    [items.length, riskPreset],
-  );
-  const onMitigationPresetSelect = React.useCallback(
-    (preset: MitigationPriorityPresetId) => {
-      if (preset === mitigationPreset) return;
-      trackEvent(
-        comparePageDecisionPresetAnalyticsEvent(),
-        comparePageDecisionPresetAnalyticsData("mitigation-priority", preset, items.length),
-      );
-      setMitigationPreset(preset);
-    },
-    [items.length, mitigationPreset],
-  );
+  const actionRowDiverges = compareActionsDiverge(items);
+  const bannerTexts = comparePageBannerTexts(items);
+  const singleItemHint = compareSingleItemHintText(items.length);
 
   const pushIds = (next: Entry[]) => {
     const ids = serializeCompareItems(next);
@@ -247,10 +90,6 @@ function ComparePage() {
 
   const removeItem = (e: Entry) => {
     const next = items.filter((x) => !sameEntry(x, e));
-    trackEvent(
-      comparePageRemoveAnalyticsEvent(),
-      comparePageRemoveAnalyticsData(e.category, e.slug, next.length),
-    );
     compare.toggle(e);
     pushIds(next);
   };
@@ -258,37 +97,15 @@ function ComparePage() {
   const addItem = (e: Entry) => {
     if (items.length >= 4) return;
     if (items.some((x) => sameEntry(x, e))) return;
-    const nextCount = items.length + 1;
-    trackEvent(
-      comparePageAddSelectAnalyticsEvent(),
-      comparePageAddSelectAnalyticsData(e.category, e.slug, nextCount),
-    );
     compare.toggle(e);
     pushIds([...items, e]);
     setPickerOpen(false);
   };
 
-  const onClearAll = () => {
-    const clearedCount = items.length;
-    if (clearedCount === 0) return;
-    trackEvent(comparePageClearAnalyticsEvent(), comparePageClearAnalyticsData(clearedCount));
-    compare.clear();
-    navigate({ search: { ids: "" } });
+  const copyShare = () => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return comparePageShareUrlFromEntries(items, origin);
   };
-
-  const onAddOpen = () => {
-    trackEvent(comparePageAddOpenAnalyticsEvent(), comparePageAddOpenAnalyticsData(items.length));
-    setPickerOpen(true);
-  };
-
-  const onOpenDossier = (entry: Entry) => {
-    trackEvent(
-      comparePageOpenDossierAnalyticsEvent(),
-      comparePageOpenDossierAnalyticsData(entry.category, entry.slug),
-    );
-  };
-
-  const copyShare = () => pageUi.shareUrl;
 
   if (items.length === 0) {
     const resolvedFromUrl = resolveIds(sp.ids);
@@ -296,87 +113,47 @@ function ComparePage() {
       // Render directly from URL while context hydrates.
       return <Skeleton ids={sp.ids} />;
     }
+    const invalidUrlHint = compareInvalidUrlHint(sp.ids, 0);
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
         <div className="rounded-xl border border-dashed border-border bg-surface p-10 text-center">
           <div className="eyebrow">Comparison</div>
           <h1 className="mt-2 h-display-2 text-ink text-balance">Nothing to compare yet</h1>
-          <p className="mt-2 text-sm text-ink-muted">{emptyUi.description}</p>
-          {emptyUi.invalidUrlHint ? (
-            <p className="mt-2 text-sm text-amber-800">{emptyUi.invalidUrlHint}</p>
-          ) : null}
+          <p className="mt-2 text-sm text-ink-muted">{compareEmptyStateDescription()}</p>
+          {invalidUrlHint ? <p className="mt-2 text-sm text-amber-800">{invalidUrlHint}</p> : null}
           <div className="mt-5 flex justify-center gap-2">
-            {(() => {
-              const destination = comparePageEmptyEgressDestination("browse-directory");
-              if (!destination) return null;
-              return (
-                <Link
-                  to={destination.to}
-                  className="inline-flex h-9 items-center rounded-md bg-ink px-4 text-sm font-medium text-background hover:bg-ink/90"
-                  onClick={() =>
-                    trackEvent(
-                      comparePageEmptyEgressAnalyticsEvent(),
-                      comparePageEmptyEgressAnalyticsData("browse-directory"),
-                    )
-                  }
-                >
-                  Browse the directory
-                </Link>
-              );
-            })()}
+            <Link
+              to="/browse"
+              className="inline-flex h-9 items-center rounded-md bg-ink px-4 text-sm font-medium text-background hover:bg-ink/90"
+            >
+              Browse the directory
+            </Link>
           </div>
           <div className="mt-6">
             <div className="eyebrow mb-2">Popular comparisons</div>
             <div className="flex flex-wrap justify-center gap-2">
-              {emptyUi.popularComparisonLinks.map((comparison) => {
-                const refCount =
-                  COMPARISONS.find((item) => item.slug === comparison.slug)?.refs.length ?? 0;
-                const curatedDestination = comparePageEmptyEgressDestination(
-                  "curated-page",
-                  comparison.slug,
-                );
-                const interactiveDestination =
-                  comparison.interactiveSearch &&
-                  comparePageEmptyEgressDestination(
-                    "interactive",
-                    comparison.interactiveSearch.ids,
-                  );
-                if (!curatedDestination || !("params" in curatedDestination)) return null;
+              {COMPARISONS.map((c) => {
+                const resolvedCount = resolveComparisonRefs(c.refs, ENTRIES).length;
+                const interactiveSearch = compareFeaturedInteractiveSearch(c.refs, ENTRIES);
                 return (
                   <div
-                    key={comparison.slug}
+                    key={c.slug}
                     className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5"
                   >
                     <Link
-                      to={curatedDestination.to}
-                      params={curatedDestination.params}
+                      to="/compare/$slug"
+                      params={{ slug: c.slug }}
                       className="text-xs text-ink-muted hover:text-ink"
-                      onClick={() =>
-                        trackEvent(
-                          comparePageEmptyEgressAnalyticsEvent(),
-                          comparePageEmptyEgressAnalyticsData(
-                            "curated-page",
-                            refCount,
-                            Boolean(comparison.interactiveSearch),
-                          ),
-                        )
-                      }
                     >
-                      {comparison.heading}
+                      {c.heading}
                     </Link>
-                    {interactiveDestination && "search" in interactiveDestination ? (
+                    {interactiveSearch ? (
                       <Link
-                        to={interactiveDestination.to}
-                        search={interactiveDestination.search}
+                        to="/compare"
+                        search={interactiveSearch}
                         className="text-[10px] text-ink-subtle hover:text-ink"
-                        onClick={() =>
-                          trackEvent(
-                            comparePageEmptyEgressAnalyticsEvent(),
-                            comparePageEmptyEgressAnalyticsData("interactive", refCount, true),
-                          )
-                        }
                       >
-                        {comparison.interactiveLabel}
+                        {compareFeaturedInteractiveLinkLabel(resolvedCount)}
                       </Link>
                     ) : null}
                   </div>
@@ -398,82 +175,30 @@ function ComparePage() {
           <h1 className="mt-1 h-display-2 text-ink text-balance">
             {items.length} {items.length === 1 ? "resource" : "resources"} side by side
           </h1>
-          {pageUi.bannerTexts.length > 0 ? (
+          {bannerTexts.length > 0 ? (
             <div className="mt-2 space-y-1.5">
-              {pageUi.bannerTexts.map((text) => (
+              {bannerTexts.map((text) => (
                 <p key={text} className="text-sm text-ink-muted">
                   {text}
                 </p>
               ))}
             </div>
           ) : null}
-          {pageUi.singleItemHint ? (
-            <p className="mt-2 text-sm text-ink-muted">{pageUi.singleItemHint}</p>
-          ) : null}
+          {singleItemHint ? <p className="mt-2 text-sm text-ink-muted">{singleItemHint}</p> : null}
         </div>
         <div className="flex items-center gap-2">
-          <CopyButton
-            value={copyShare()}
-            label="Copy share link"
-            event={comparePageShareLinkCopyAnalyticsEvent()}
-            eventData={comparePageShareLinkCopyAnalyticsData(items.length)}
-          />
+          <CopyButton value={copyShare()} label="Copy share link" />
           <button
             type="button"
-            onClick={onClearAll}
+            onClick={() => {
+              compare.clear();
+              navigate({ search: { ids: "" } });
+            }}
             className="inline-flex h-8 items-center rounded-md border border-border bg-surface px-3 text-xs text-ink-muted hover:bg-surface-2 hover:text-ink"
           >
             Clear all
           </button>
         </div>
-      </div>
-
-      <div className="mt-4 overflow-auto rounded-xl border border-border">
-        <CompareDecisionBriefPanel
-          state={decisionBrief}
-          surface={comparePageDecisionBriefSurface()}
-          className="m-3 mb-0"
-        />
-        <CompareScenarioRankingPanel
-          state={scenarioRanking}
-          surface={comparePageScenarioSurface()}
-          selectedScenario={scenario}
-          onSelectScenario={onScenarioSelect}
-          className="m-3"
-        />
-        <CompareEvidenceGapsPanel
-          state={evidenceGaps}
-          surface={comparePageEvidenceGapsSurface()}
-          className="m-3 mt-0"
-        />
-        <CompareRolloutReadinessPanel
-          state={rolloutReadiness}
-          surface={comparePageDecisionPresetSurface("rollout-readiness")}
-          selectedPreset={rolloutPreset}
-          onSelectPreset={onRolloutPresetSelect}
-          className="m-3 mt-0"
-        />
-        <CompareOperationalFitHeatmapPanel
-          state={operationalFitHeatmap}
-          surface={comparePageDecisionPresetSurface("operational-fit")}
-          selectedPreset={fitPreset}
-          onSelectPreset={onFitPresetSelect}
-          className="m-3 mt-0"
-        />
-        <CompareDeploymentRiskMapPanel
-          state={deploymentRiskMap}
-          surface={comparePageDecisionPresetSurface("deployment-risk")}
-          selectedPreset={riskPreset}
-          onSelectPreset={onRiskPresetSelect}
-          className="m-3 mt-0"
-        />
-        <CompareMitigationPriorityPanel
-          state={mitigationPriority}
-          surface={comparePageDecisionPresetSurface("mitigation-priority")}
-          selectedPreset={mitigationPreset}
-          onSelectPreset={onMitigationPresetSelect}
-          className="m-3 mt-0"
-        />
       </div>
 
       <div className="mt-4 overflow-auto rounded-xl border border-border">
@@ -493,25 +218,13 @@ function ComparePage() {
                   className="min-w-[260px] max-w-[320px] border-b border-r border-border bg-surface p-3 text-left align-top"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    {(() => {
-                      const destination = comparePanelEntryDestination(e.category, e.slug);
-                      if (!destination)
-                        return (
-                          <span className="font-display text-sm font-semibold text-ink">
-                            {e.title}
-                          </span>
-                        );
-                      return (
-                        <Link
-                          to={destination.to}
-                          params={destination.params}
-                          onClick={() => onOpenDossier(e)}
-                          className="font-display text-sm font-semibold text-ink hover:underline"
-                        >
-                          {e.title}
-                        </Link>
-                      );
-                    })()}
+                    <Link
+                      to="/entry/$category/$slug"
+                      params={{ category: e.category, slug: e.slug }}
+                      className="font-display text-sm font-semibold text-ink hover:underline"
+                    >
+                      {e.title}
+                    </Link>
                     <button
                       type="button"
                       onClick={() => removeItem(e)}
@@ -522,20 +235,13 @@ function ComparePage() {
                     </button>
                   </div>
                   <p className="mt-1 line-clamp-2 text-xs text-ink-muted">{e.description}</p>
-                  {(() => {
-                    const destination = comparePanelEntryDestination(e.category, e.slug);
-                    if (!destination) return null;
-                    return (
-                      <Link
-                        to={destination.to}
-                        params={destination.params}
-                        onClick={() => onOpenDossier(e)}
-                        className="mt-2 inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink"
-                      >
-                        Open dossier <ArrowRight className="h-3 w-3" />
-                      </Link>
-                    );
-                  })()}
+                  <Link
+                    to="/entry/$category/$slug"
+                    params={{ category: e.category, slug: e.slug }}
+                    className="mt-2 inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink"
+                  >
+                    Open dossier <ArrowRight className="h-3 w-3" />
+                  </Link>
                 </th>
               ))}
               {items.length < 4 && (
@@ -546,7 +252,6 @@ function ComparePage() {
                   <AddColumn
                     open={pickerOpen}
                     setOpen={setPickerOpen}
-                    onOpen={onAddOpen}
                     onPick={addItem}
                     exclude={items}
                   />
@@ -583,7 +288,7 @@ function ComparePage() {
                     actionRowDiverges && "bg-amber-500/5",
                   )}
                 >
-                  <CompareNextActions entry={e} actionCells={actionCells} />
+                  <CompareNextActions entry={e} />
                 </td>
               ))}
               {items.length < 4 && (
@@ -650,26 +355,12 @@ function ComparePage() {
       <p className="mt-3 text-xs text-ink-subtle">
         Share this comparison by copying the link above — the selection is encoded in the URL.
       </p>
-
-      <NewsletterInline
-        variant="quiet"
-        title="More comparisons, weekly"
-        description="A short, calm digest of reviewed Claude resources. Unsubscribe any time."
-        source={sp.ids ? `compare:ids:${sp.ids}` : "compare:interactive"}
-        className="mt-14"
-      />
     </div>
   );
 }
 
-function CompareNextActions({
-  entry,
-  actionCells,
-}: {
-  entry: Entry;
-  actionCells: ReturnType<typeof comparePageInteractiveUiState>["actionCells"];
-}) {
-  const actions = comparePageActionsForEntry(entry, actionCells);
+function CompareNextActions({ entry }: { entry: Entry }) {
+  const actions = resolveCompareEntryActions(entry);
 
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -689,7 +380,7 @@ function CompareActionButton({ entry, action }: { entry: Entry; action: CompareA
         value={action.copyValue}
         label={action.label}
         event={action.analyticsEvent}
-        eventData={{ entry: eventKey, surface: COMPARE_PAGE_SURFACE }}
+        eventData={{ entry: eventKey, surface: "compare-page" }}
         onCopied={() => {
           if (action.intentType) void recordCompareIntentEvent(action.intentType, entry);
         }}
@@ -699,15 +390,13 @@ function CompareActionButton({ entry, action }: { entry: Entry; action: CompareA
 
   if (action.kind === "link") {
     if (action.id === "dossier") {
-      const destination = comparePanelEntryDestination(entry.category, entry.slug);
-      if (!destination) return null;
       return (
         <Link
-          to={destination.to}
-          params={destination.params}
+          to="/entry/$category/$slug"
+          params={{ category: entry.category, slug: entry.slug }}
           onClick={() => {
             if (action.analyticsEvent) {
-              trackEvent(action.analyticsEvent, { entry: eventKey, surface: COMPARE_PAGE_SURFACE });
+              trackEvent(action.analyticsEvent, { entry: eventKey, surface: "compare-page" });
             }
             if (action.intentType) void recordCompareIntentEvent(action.intentType, entry);
           }}
@@ -719,16 +408,13 @@ function CompareActionButton({ entry, action }: { entry: Entry; action: CompareA
     }
 
     if (action.id === "claim") {
-      const destination = claimCtaDestination("claim");
-      if (!destination) return null;
       return (
         <Link
-          to={destination.to}
+          to="/claim"
           onClick={() => {
-            trackEvent(
-              claimCtaAnalyticsEvent(),
-              claimCtaAnalyticsData("compare-page", entry.category, entry.slug),
-            );
+            if (action.analyticsEvent) {
+              trackEvent(action.analyticsEvent, { entry: eventKey, surface: "compare-page" });
+            }
           }}
           className="inline-flex h-7 items-center rounded-md border border-border bg-surface px-2 text-xs font-medium text-ink hover:bg-surface-2"
         >
@@ -737,15 +423,15 @@ function CompareActionButton({ entry, action }: { entry: Entry; action: CompareA
       );
     }
 
-    if (action.href) {
+    if (action.href && action.external) {
       return (
         <a
           href={action.href}
-          target={action.external ? "_blank" : undefined}
-          rel={action.external ? "noreferrer" : undefined}
+          target="_blank"
+          rel="noreferrer"
           onClick={() => {
             if (action.analyticsEvent) {
-              trackEvent(action.analyticsEvent, { entry: eventKey, surface: COMPARE_PAGE_SURFACE });
+              trackEvent(action.analyticsEvent, { entry: eventKey, surface: "compare-page" });
             }
             if (action.intentType) void recordCompareIntentEvent(action.intentType, entry);
           }}
@@ -773,13 +459,11 @@ function Skeleton({ ids }: { ids: string }) {
 function AddColumn({
   open,
   setOpen,
-  onOpen,
   onPick,
   exclude,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
-  onOpen: () => void;
   onPick: (e: Entry) => void;
   exclude: Entry[];
 }) {
@@ -793,7 +477,7 @@ function AddColumn({
     return (
       <button
         type="button"
-        onClick={onOpen}
+        onClick={() => setOpen(true)}
         className="inline-flex h-8 items-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 text-xs text-ink-muted hover:bg-surface-2 hover:text-ink"
       >
         <Plus className="h-3.5 w-3.5" />

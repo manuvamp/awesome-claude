@@ -2,23 +2,6 @@ import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Check, ShieldCheck, ListChecks } from "lucide-react";
 import { ENTRIES } from "@/data/entries";
-import { resolveClaimWebsiteUrl } from "@/lib/claim-website-url-lib";
-import { trackEvent } from "@/lib/analytics";
-import {
-  claimPageChangeListingAnalyticsData,
-  claimPageChangeListingAnalyticsEvent,
-  claimPageEgressAnalyticsData,
-  claimPageEgressAnalyticsEvent,
-  claimPageEgressDestination,
-  claimPageEntrySelectAnalyticsData,
-  claimPageEntrySelectAnalyticsEvent,
-  claimPageFileAnalyticsData,
-  claimPageFileAnalyticsEvent,
-  claimPageResetAnalyticsData,
-  claimPageResetAnalyticsEvent,
-  claimPageTypeSelectAnalyticsData,
-  claimPageTypeSelectAnalyticsEvent,
-} from "@/lib/claim-page-cta-events";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { absoluteUrl } from "@/lib/seo";
@@ -96,6 +79,31 @@ const PROOF_FIELDS = [
 
 const TYPE_OPTIONS: ClaimType[] = ["maintain", "transfer", "correct", "remove"];
 
+function resolveClaimWebsiteUrl(
+  entry: (typeof ENTRIES)[number],
+  proof: Record<string, string>,
+): string {
+  const candidates = [entry.sourceUrl, entry.repoUrl, entry.docsUrl, entry.websiteUrl];
+  for (const url of candidates) {
+    const trimmed = (url ?? "").trim();
+    if (/^https:\/\//i.test(trimmed)) return trimmed;
+  }
+  const repo = (proof.repo ?? "").trim();
+  if (repo) {
+    const normalized = repo
+      .replace(/^https?:\/\/github\.com\//i, "")
+      .replace(/^github\.com\//i, "")
+      .replace(/^\//, "")
+      .replace(/[?#].*$/, "");
+    if (/^[\w.-]+\/[\w.-]+$/.test(normalized)) {
+      return `https://github.com/${normalized}`;
+    }
+  }
+  const link = (proof.link ?? "").trim();
+  if (/^https:\/\//i.test(link)) return link;
+  return "";
+}
+
 function ClaimPage() {
   const [done, setDone] = React.useState(false);
   const [type, setType] = React.useState<ClaimType>("maintain");
@@ -127,11 +135,7 @@ function ClaimPage() {
 
   const optionId = (index: number) => `${listboxId}-option-${index}`;
 
-  const choose = (entry: (typeof ENTRIES)[number], rowIndex: number) => {
-    trackEvent(
-      claimPageEntrySelectAnalyticsEvent(),
-      claimPageEntrySelectAnalyticsData(entry.category, entry.slug, rowIndex, matches.length),
-    );
+  const choose = (entry: (typeof ENTRIES)[number]) => {
     setPicked(entry);
     setActiveIndex(-1);
   };
@@ -156,7 +160,7 @@ function ClaimPage() {
       case "Enter":
         if (activeIndex >= 0 && activeIndex < matches.length) {
           e.preventDefault();
-          choose(matches[activeIndex], activeIndex);
+          choose(matches[activeIndex]);
         }
         break;
       case "Escape":
@@ -179,10 +183,6 @@ function ClaimPage() {
     if (!picked || !contactEmail || submitting) return;
     setSubmitting(true);
     setError("");
-    trackEvent(
-      claimPageFileAnalyticsEvent(),
-      claimPageFileAnalyticsData(type, "intent", PROOF_FIELDS.length, filled.length),
-    );
     const proofLines = PROOF_FIELDS.filter((field) => field.id !== "email")
       .map((field) => {
         const value = (proof[field.id] ?? "").trim();
@@ -210,16 +210,8 @@ function ClaimPage() {
         }),
       });
       if (!response.ok) throw new Error(`Claim intake returned ${response.status}`);
-      trackEvent(
-        claimPageFileAnalyticsEvent(),
-        claimPageFileAnalyticsData(type, "success", PROOF_FIELDS.length, filled.length),
-      );
       setDone(true);
     } catch {
-      trackEvent(
-        claimPageFileAnalyticsEvent(),
-        claimPageFileAnalyticsData(type, "error", PROOF_FIELDS.length, filled.length),
-      );
       setError("Claim could not be submitted. Check the required fields and try again.");
     } finally {
       setSubmitting(false);
@@ -240,7 +232,6 @@ function ClaimPage() {
         <button
           type="button"
           onClick={() => {
-            trackEvent(claimPageResetAnalyticsEvent(), claimPageResetAnalyticsData());
             setDone(false);
             setPicked(null);
             setQuery("");
@@ -284,10 +275,6 @@ function ClaimPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      trackEvent(
-                        claimPageChangeListingAnalyticsEvent(),
-                        claimPageChangeListingAnalyticsData(picked.category, picked.slug),
-                      );
                       setPicked(null);
                       setQuery("");
                     }}
@@ -326,7 +313,7 @@ function ClaimPage() {
                         >
                           <button
                             type="button"
-                            onClick={() => choose(m, i)}
+                            onClick={() => choose(m)}
                             onMouseEnter={() => setActiveIndex(i)}
                             className={cn(
                               "block w-full px-3 py-2 text-left hover:bg-surface-2",
@@ -353,16 +340,7 @@ function ClaimPage() {
                 <button
                   type="button"
                   key={t}
-                  aria-pressed={type === t}
-                  onClick={() => {
-                    if (type !== t) {
-                      trackEvent(
-                        claimPageTypeSelectAnalyticsEvent(),
-                        claimPageTypeSelectAnalyticsData(t),
-                      );
-                    }
-                    setType(t);
-                  }}
+                  onClick={() => setType(t)}
                   className={cn(
                     "rounded-md border px-3 py-2 text-left text-sm transition-colors duration-200 ease-out",
                     type === t
@@ -493,24 +471,9 @@ function ClaimPage() {
         </div>
         <p className="mt-3 text-xs text-ink-subtle">
           Want to file a fresh submission instead?{" "}
-          {(() => {
-            const destination = claimPageEgressDestination("submit");
-            if (!destination) return "Submit a resource →";
-            return (
-              <Link
-                to={destination.to}
-                className="text-ink hover:underline"
-                onClick={() =>
-                  trackEvent(
-                    claimPageEgressAnalyticsEvent(),
-                    claimPageEgressAnalyticsData("submit"),
-                  )
-                }
-              >
-                Submit a resource →
-              </Link>
-            );
-          })()}
+          <Link to="/submit" className="text-ink hover:underline">
+            Submit a resource →
+          </Link>
         </p>
       </section>
     </div>

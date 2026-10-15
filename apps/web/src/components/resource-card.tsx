@@ -18,34 +18,8 @@ import { PeekButton, setHotPeek, clearHotPeek, type PeekHandle } from "./peek-bu
 import { PeekHint } from "./peek-hint";
 import { LazyEntryAuthorAttribution } from "./lazy-linked-attribution";
 import { useCompareActions, useIsCompared } from "@/lib/compare";
-import { recordIntentEvent } from "@/lib/intent-event-client";
-import {
-  resourceCardCategoryBrowseAnalyticsData,
-  resourceCardCategoryBrowseAnalyticsEvent,
-  resourceCardTrustBrowseAnalyticsData,
-  resourceCardTrustBrowseAnalyticsEvent,
-  resourceCardCompareAnalyticsData,
-  resourceCardCompareAnalyticsEvent,
-  resourceCardCompareToastOpenAnalyticsData,
-  resourceCardCompareToastOpenAnalyticsEvent,
-  resourceCardEntryAnalyticsData,
-  resourceCardEntryAnalyticsEvent,
-  resourceCardEntryDestination,
-  resourceCardSourceAnalyticsData,
-  resourceCardSourceAnalyticsEvent,
-  resourceCardInstallAnalyticsData,
-  resourceCardInstallAnalyticsEvent,
-  resourceCardInstallIntentType,
-  resourceCardTrustHintAnalyticsData,
-  resourceCardTrustHintAnalyticsEvent,
-  RESOURCE_CARD_SURFACE,
-  type ResourceCardSurface,
-} from "@/lib/resource-card-cta-events";
-import { resourceCardCompareFullMessage } from "@/lib/resource-card-compare-ui";
-import { resourceCardTrustDecisionState } from "@/lib/resource-card-trust-decision";
-import { ResourceCardTrustHint } from "@/components/resource-card-trust-hint";
 import { cn } from "@/lib/utils";
-import { trackEvent, outboundHost } from "@/lib/analytics";
+import { trackEvent, entryEventKey, outboundHost } from "@/lib/analytics";
 
 import { formatCompact, timeAgo } from "@/lib/format";
 const fmtNum = (n?: number) => formatCompact(n);
@@ -67,21 +41,13 @@ function ResourceCardInner({
   entry,
   variant = "row",
   rank,
-  compareItems = [],
-  analyticsSurface = RESOURCE_CARD_SURFACE,
 }: {
   entry: Entry;
   variant?: "row" | "grid" | "compact";
   rank?: number;
-  compareItems?: Entry[];
-  analyticsSurface?: ResourceCardSurface;
 }) {
   const { toggle, setOpen } = useCompareActions();
   const inCompare = useIsCompared(entry);
-  const trustDecision = React.useMemo(
-    () => resourceCardTrustDecisionState(entry, compareItems),
-    [entry, compareItems],
-  );
   const peekRef = React.useRef<PeekHandle>(null);
   const handle = React.useMemo(() => ({ open: () => peekRef.current?.open() }), []);
   const [hovered, setHovered] = React.useState(false);
@@ -106,88 +72,18 @@ function ResourceCardInner({
 
   const installPayload = entry.installCommand ?? entry.configSnippet ?? entry.fullCopy ?? "";
 
-  const onEntryClick = () => {
-    trackEvent(
-      resourceCardEntryAnalyticsEvent(),
-      resourceCardEntryAnalyticsData(
-        entry.category,
-        entry.slug,
-        variant,
-        typeof rank === "number" ? rank : null,
-        compareItems.length,
-        analyticsSurface,
-      ),
-    );
-  };
-
   const onCompareToggle = () => {
     const wasIn = inCompare;
-    const changed = toggle(entry);
-    if (!changed) {
-      toast.error(resourceCardCompareFullMessage());
-      return;
-    }
-    trackEvent(resourceCardCompareAnalyticsEvent(!wasIn), {
-      ...resourceCardCompareAnalyticsData(entry.category, entry.slug, analyticsSurface),
-    });
+    toggle(entry);
     if (wasIn) {
       toast(`Removed “${entry.title}” from compare`);
     } else {
-      const compareCount = compareItems.length + 1;
       toast.success("Added to compare", {
         description: entry.title,
-        action: {
-          label: "View",
-          onClick: () => {
-            setOpen(true);
-            trackEvent(
-              resourceCardCompareToastOpenAnalyticsEvent(),
-              resourceCardCompareToastOpenAnalyticsData(
-                entry.category,
-                entry.slug,
-                compareCount,
-                analyticsSurface,
-              ),
-            );
-          },
-        },
+        action: { label: "View", onClick: () => setOpen(true) },
       });
     }
   };
-
-  const onTrustHintActivate = () => {
-    if (!trustDecision) return;
-    trackEvent(
-      resourceCardTrustHintAnalyticsEvent(),
-      resourceCardTrustHintAnalyticsData(
-        entry.category,
-        entry.slug,
-        trustDecision.kind,
-        inCompare,
-        compareItems.length,
-        analyticsSurface,
-      ),
-    );
-    if (!inCompare) {
-      const changed = toggle(entry);
-      if (!changed) {
-        toast.error(resourceCardCompareFullMessage());
-        return;
-      }
-    }
-    setOpen(true);
-  };
-
-  const onInstallCopied = () => {
-    void recordIntentEvent(resourceCardInstallIntentType(entry), entry);
-  };
-
-  const installAnalyticsData = resourceCardInstallAnalyticsData(
-    entry.category,
-    entry.slug,
-    analyticsSurface,
-  );
-  const entryDestination = resourceCardEntryDestination(entry.category, entry.slug);
 
   if (variant === "compact") {
     return (
@@ -195,63 +91,29 @@ function ResourceCardInner({
         {...peekListeners}
         className="group relative flex items-center gap-3 border-b border-border px-4 py-2 text-sm transition-colors duration-200 ease-out hover:bg-surface-2 sm:px-6"
       >
-        {entryDestination ? (
-          <Link
-            to={entryDestination.to}
-            params={entryDestination.params}
-            onClick={onEntryClick}
-            className="flex min-w-0 flex-1 items-center gap-3 focus-visible:outline-none"
-          >
-            {typeof rank === "number" && (
-              <span className="w-7 shrink-0 font-mono text-[11px] tabular-nums text-ink-subtle">
-                {String(rank).padStart(2, "0")}
-              </span>
-            )}
-            <EntryBrandMark entry={entry} size="xs" />
-            <span className="min-w-0 flex-1 truncate font-medium text-ink group-hover:underline">
-              {entry.title}
-            </span>
-            <span className="hidden min-w-0 max-w-[40%] truncate text-xs text-ink-muted sm:inline">
-              {entry.cardDescription ?? entry.description}
-            </span>
-            <span className="hidden sm:inline-flex">
-              <SourceRepoStars entry={entry} compact />
-            </span>
-          </Link>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            {typeof rank === "number" && (
-              <span className="w-7 shrink-0 font-mono text-[11px] tabular-nums text-ink-subtle">
-                {String(rank).padStart(2, "0")}
-              </span>
-            )}
-            <EntryBrandMark entry={entry} size="xs" />
-            <span className="min-w-0 flex-1 truncate font-medium text-ink">{entry.title}</span>
-          </div>
-        )}
-        <CategoryPill
-          asLink
-          category={entry.category}
-          onNavigate={() =>
-            trackEvent(
-              resourceCardCategoryBrowseAnalyticsEvent(),
-              resourceCardCategoryBrowseAnalyticsData(entry.category, analyticsSurface),
-            )
-          }
+        <Link
+          to="/entry/$category/$slug"
+          params={{ category: entry.category, slug: entry.slug }}
+          className="flex min-w-0 flex-1 items-center gap-3 focus-visible:outline-none"
         >
-          {entry.category}
-        </CategoryPill>
-        <SourceBadge status={entry.source} asLink surface={analyticsSurface} />
-        <TrustBadge
-          level={entry.trust}
-          asLink
-          onNavigate={() =>
-            trackEvent(
-              resourceCardTrustBrowseAnalyticsEvent(),
-              resourceCardTrustBrowseAnalyticsData(entry.trust, analyticsSurface),
-            )
-          }
-        />
+          {typeof rank === "number" && (
+            <span className="w-7 shrink-0 font-mono text-[11px] tabular-nums text-ink-subtle">
+              {String(rank).padStart(2, "0")}
+            </span>
+          )}
+          <EntryBrandMark entry={entry} size="xs" />
+          <CategoryPill>{entry.category}</CategoryPill>
+          <span className="min-w-0 flex-1 truncate font-medium text-ink group-hover:underline">
+            {entry.title}
+          </span>
+          <span className="hidden min-w-0 max-w-[40%] truncate text-xs text-ink-muted sm:inline">
+            {entry.cardDescription ?? entry.description}
+          </span>
+          <span className="hidden sm:inline-flex">
+            <SourceRepoStars entry={entry} compact />
+          </span>
+          <TrustBadge level={entry.trust} />
+        </Link>
         <span className="hidden min-w-0 shrink md:inline-flex">
           <LazyEntryAuthorAttribution entry={entry} className="truncate text-xs text-ink-subtle" />
         </span>
@@ -274,82 +136,41 @@ function ResourceCardInner({
         )}
       >
         <div className="flex flex-1 flex-col gap-3 p-4">
-          {entryDestination ? (
-            <Link
-              to={entryDestination.to}
-              params={entryDestination.params}
-              onClick={onEntryClick}
-              className="flex flex-1 flex-col gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 rounded-lg"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <EntryBrandMark entry={entry} size="xs" />
-                </div>
-                <div className="flex min-h-4 items-center text-xs text-ink-muted tabular-nums">
-                  <SourceRepoStars entry={entry} compact />
-                </div>
-              </div>
-              <div>
-                <h3 className="font-display text-base font-semibold leading-tight text-ink">
-                  {entry.title}
-                </h3>
-                <p className="mt-1.5 line-clamp-2 text-sm text-ink-muted">
-                  {entry.cardDescription ?? entry.description}
-                </p>
-              </div>
-              <EntryFacets entry={entry} density="card" />
-              {entry.dateAdded && (
-                <div className="mt-auto">
-                  <span className="font-mono text-[10px] text-ink-subtle">
-                    Added {timeAgo(entry.dateAdded)}
-                  </span>
-                </div>
-              )}
-            </Link>
-          ) : (
-            <div className="flex flex-1 flex-col gap-3">
-              <div className="flex items-start justify-between gap-2">
+          <Link
+            to="/entry/$category/$slug"
+            params={{ category: entry.category, slug: entry.slug }}
+            className="flex flex-1 flex-col gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 rounded-lg"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <EntryBrandMark entry={entry} size="xs" />
+                <CategoryPill>{entry.category}</CategoryPill>
               </div>
+              <div className="flex min-h-4 items-center text-xs text-ink-muted tabular-nums">
+                <SourceRepoStars entry={entry} compact />
+              </div>
+            </div>
+            <div>
               <h3 className="font-display text-base font-semibold leading-tight text-ink">
                 {entry.title}
               </h3>
+              <p className="mt-1.5 line-clamp-2 text-sm text-ink-muted">
+                {entry.cardDescription ?? entry.description}
+              </p>
             </div>
-          )}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <CategoryPill
-              asLink
-              category={entry.category}
-              onNavigate={() =>
-                trackEvent(
-                  resourceCardCategoryBrowseAnalyticsEvent(),
-                  resourceCardCategoryBrowseAnalyticsData(entry.category, analyticsSurface),
-                )
-              }
-            >
-              {entry.category}
-            </CategoryPill>
-            <TrustBadge
-              level={entry.trust}
-              asLink
-              onNavigate={() =>
-                trackEvent(
-                  resourceCardTrustBrowseAnalyticsEvent(),
-                  resourceCardTrustBrowseAnalyticsData(entry.trust, analyticsSurface),
-                )
-              }
-            />
-            <SourceBadge status={entry.source} asLink surface={analyticsSurface} />
-            <InstallRiskBadge entry={entry} size="xs" asLink surface={analyticsSurface} />
-          </div>
-          <NotesPresenceChips entry={entry} asLink surface={analyticsSurface} />
-          {trustDecision ? (
-            <ResourceCardTrustHint
-              state={trustDecision}
-              className="mt-1"
-              onActivate={onTrustHintActivate}
-            />
-          ) : null}
+            <EntryFacets entry={entry} density="card" />
+            <div className="mt-auto flex flex-wrap items-center gap-1.5">
+              <TrustBadge level={entry.trust} />
+              <SourceBadge status={entry.source} />
+              <InstallRiskBadge entry={entry} size="xs" />
+              {entry.dateAdded && (
+                <span className="ml-auto font-mono text-[10px] text-ink-subtle">
+                  Added {timeAgo(entry.dateAdded)}
+                </span>
+              )}
+            </div>
+            <NotesPresenceChips entry={entry} />
+          </Link>
           <LazyEntryAuthorAttribution entry={entry} className="text-xs text-ink-subtle" />
         </div>
         <div className="pointer-events-none absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md border border-border bg-surface/95 p-0.5 opacity-0 shadow-sm backdrop-blur transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 group-focus-within:opacity-100">
@@ -363,9 +184,8 @@ function ResourceCardInner({
                 value={installPayload}
                 label="Copy install"
                 toastLabel={`Copied install — ${entry.title}`}
-                event={resourceCardInstallAnalyticsEvent()}
-                eventData={installAnalyticsData}
-                onCopied={onInstallCopied}
+                event="copy-install"
+                eventData={{ entry: entryEventKey(entry.category, entry.slug) }}
               />
             </div>
           )}
@@ -407,63 +227,29 @@ function ResourceCardInner({
         <EntryBrandMark entry={entry} size="sm" className="mt-0.5" />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
-            <CategoryPill
-              asLink
-              category={entry.category}
-              onNavigate={() =>
-                trackEvent(
-                  resourceCardCategoryBrowseAnalyticsEvent(),
-                  resourceCardCategoryBrowseAnalyticsData(entry.category, analyticsSurface),
-                )
-              }
-            >
-              {entry.category}
-            </CategoryPill>
-            <TrustBadge
-              level={entry.trust}
-              asLink
-              onNavigate={() =>
-                trackEvent(
-                  resourceCardTrustBrowseAnalyticsEvent(),
-                  resourceCardTrustBrowseAnalyticsData(entry.trust, analyticsSurface),
-                )
-              }
-            />
-            <SourceBadge status={entry.source} asLink surface={analyticsSurface} />
-            <InstallRiskBadge entry={entry} size="xs" asLink surface={analyticsSurface} />
+            <CategoryPill>{entry.category}</CategoryPill>
+            <TrustBadge level={entry.trust} />
+            <SourceBadge status={entry.source} />
+            <InstallRiskBadge entry={entry} size="xs" />
             {entry.platforms.slice(0, 2).map((p) => (
-              <PlatformChip key={p} id={p} asLink surface={analyticsSurface} />
+              <PlatformChip key={p} id={p} />
             ))}
           </div>
 
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            {entryDestination ? (
-              <Link
-                to={entryDestination.to}
-                params={entryDestination.params}
-                onClick={onEntryClick}
-                className="font-display text-[15px] font-semibold tracking-tight text-ink group-hover:underline"
-              >
-                {entry.title}
-              </Link>
-            ) : (
-              <span className="font-display text-[15px] font-semibold tracking-tight text-ink">
-                {entry.title}
-              </span>
-            )}
+            <Link
+              to="/entry/$category/$slug"
+              params={{ category: entry.category, slug: entry.slug }}
+              className="font-display text-[15px] font-semibold tracking-tight text-ink group-hover:underline"
+            >
+              {entry.title}
+            </Link>
             <LazyEntryAuthorAttribution entry={entry} />
           </div>
           <p className="line-clamp-2 max-w-3xl text-sm text-ink-muted">{entry.description}</p>
-          {trustDecision ? (
-            <ResourceCardTrustHint
-              state={trustDecision}
-              className="mt-1"
-              onActivate={onTrustHintActivate}
-            />
-          ) : null}
           <div className="flex flex-wrap items-center gap-2 pt-0.5">
             <EntryFacets entry={entry} density="card" />
-            <NotesPresenceChips entry={entry} asLink surface={analyticsSurface} />
+            <NotesPresenceChips entry={entry} />
           </div>
         </div>
       </div>
@@ -490,9 +276,8 @@ function ResourceCardInner({
                 value={installPayload}
                 label="Install"
                 className="w-full justify-center"
-                event={resourceCardInstallAnalyticsEvent()}
-                eventData={installAnalyticsData}
-                onCopied={onInstallCopied}
+                event="copy-install"
+                eventData={{ entry: entryEventKey(entry.category, entry.slug) }}
               />
             ) : (
               <span aria-hidden className="block h-7 w-full" />
@@ -519,15 +304,10 @@ function ResourceCardInner({
                 target="_blank"
                 rel="noreferrer"
                 onClick={() =>
-                  trackEvent(
-                    resourceCardSourceAnalyticsEvent(),
-                    resourceCardSourceAnalyticsData(
-                      entry.category,
-                      entry.slug,
-                      outboundHost(entry.sourceUrl!),
-                      analyticsSurface,
-                    ),
-                  )
+                  trackEvent("source-click", {
+                    entry: entryEventKey(entry.category, entry.slug),
+                    host: outboundHost(entry.sourceUrl!),
+                  })
                 }
                 className="inline-flex h-7 w-full items-center justify-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-ink hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
               >

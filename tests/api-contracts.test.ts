@@ -33,7 +33,6 @@ const apiRoutes = [
   "/api/newsletter/subscribe",
   "/api/newsletter/webhook",
   "/api/public/newsletter/confirm",
-  "/api/public/newsletter/unsubscribe",
   "/api/og",
   "/api/submissions/preflight",
   "/api/download",
@@ -49,7 +48,6 @@ const apiRoutes = [
   "/api/github-stats",
   "/api/public/alerts",
   "/api/public/feeds/health",
-  "/api/public/npm/{pkg}",
   "/feed.xml",
   "/atom.xml",
   "/data/feeds/index.json",
@@ -140,25 +138,6 @@ describe("OpenAPI route coverage", () => {
         expect.objectContaining({ name: "q", in: "query", example: "mcp" }),
         expect.objectContaining({ name: "limit", in: "query", example: "5" }),
       ]),
-    });
-    expect(
-      ENDPOINTS.find((endpoint) => endpoint.id === "publicNpm-read"),
-    ).toMatchObject({
-      method: "GET",
-      path: "/api/public/npm/{pkg}",
-      parameters: expect.arrayContaining([
-        expect.objectContaining({
-          name: "pkg",
-          in: "path",
-          example: "@heyclaude/mcp",
-        }),
-      ]),
-    });
-    expect(
-      ENDPOINTS.find((endpoint) => endpoint.id === "newsletter-unsubscribe"),
-    ).toMatchObject({
-      method: "POST",
-      path: "/api/public/newsletter/unsubscribe",
     });
     expect(
       ENDPOINTS.find((endpoint) => endpoint.id === "submissions-preflight"),
@@ -260,17 +239,6 @@ describe("OpenAPI route coverage", () => {
     expect(schema).toContain("Site DB not configured");
     expect(schema).toContain("D1 insert failed");
     expect(schema).toContain("status transition");
-  });
-
-  it("paginates the admin listing-leads endpoint with an offset query param", () => {
-    expect(
-      parsedSchema.paths["/api/admin/listing-leads"]?.get?.parameters,
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "limit", in: "query" }),
-        expect.objectContaining({ name: "offset", in: "query" }),
-      ]),
-    );
   });
 
   it("documents platform-aware search and social preview generation", () => {

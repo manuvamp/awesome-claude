@@ -169,11 +169,6 @@ describe("colors and asset urls", () => {
     ).toBe(true);
     expect(isAllowedBrandAssetUrl("https://heyclau.de/logo.png")).toBe(true);
     expect(isAllowedBrandAssetUrl("https://evil.example/icon.png")).toBe(false);
-    expect(
-      isAllowedBrandAssetUrl(
-        "https://token@cdn.brandfetch.io/domain/x/icon.png",
-      ),
-    ).toBe(false);
     expect(isAllowedBrandAssetUrl("not a url")).toBe(false);
   });
 });
@@ -340,42 +335,6 @@ describe("buildBrandAssetMetadata", () => {
       brandIconUrl: "/api/brand-assets/icon/zapier.com",
       brandAssetSource: "brandfetch",
     });
-  });
-
-  // brandAssetSource: "brandfetch" claims brand assets were resolved, so the
-  // logo has to resolve on the same terms as the icon rather than staying empty.
-  it("auto-resolves the brandfetch logo alongside the icon", () => {
-    expect(
-      buildBrandAssetMetadata(
-        { title: "Zapier Workflow", tags: ["zapier"] },
-        { allowAliasFallback: true },
-      ),
-    ).toMatchObject({
-      brandIconUrl: "/api/brand-assets/icon/zapier.com",
-      brandLogoUrl: "/api/brand-assets/logo/zapier.com",
-      brandAssetSource: "brandfetch",
-    });
-  });
-
-  it("prefers a manually supplied brandLogoUrl over auto-resolution", () => {
-    expect(
-      buildBrandAssetMetadata(
-        {
-          title: "Zapier Workflow",
-          tags: ["zapier"],
-          brandLogoUrl: "https://cdn.brandfetch.io/zapier.com/logo.png",
-        },
-        { allowAliasFallback: true },
-      ),
-    ).toMatchObject({
-      brandLogoUrl: "https://cdn.brandfetch.io/zapier.com/logo.png",
-    });
-  });
-
-  it("leaves brandLogoUrl empty when brandfetch resolution does not apply", () => {
-    expect(
-      buildBrandAssetMetadata({ title: "No Brand Here" }).brandLogoUrl,
-    ).toBeUndefined();
   });
 
   it("does not auto-resolve hosting domains without a known brand match", () => {

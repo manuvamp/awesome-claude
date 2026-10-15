@@ -194,8 +194,16 @@ describe("extractMcpServerConfig", () => {
     expect(extracted?.config.url).toBe("https://remote.example.com/mcp");
   });
 
-  it("rejects empty maps and invalid inner configs", () => {
+  it("rejects maps with zero or multiple servers and invalid inner configs", () => {
     expect(extractMcpServerConfig({ mcpServers: {} })).toBeNull();
+    expect(
+      extractMcpServerConfig({
+        mcpServers: {
+          a: { command: "npx" },
+          b: { command: "node" },
+        },
+      }),
+    ).toBeNull();
     expect(
       extractMcpServerConfig({
         mcpServers: {
@@ -204,56 +212,6 @@ describe("extractMcpServerConfig", () => {
       }),
     ).toBeNull();
     expect(() => extractMcpServerConfig("not json")).toThrow(SyntaxError);
-  });
-
-  it("takes the first installable server from a multi-server map", () => {
-    // Shape of the published ai-aliengiraffe-spotdb-mcp-server entry: one
-    // backend exposed as both an SSE and a streamable server.
-    const extracted = extractMcpServerConfig({
-      mcpServers: {
-        "spotdb-sse": {
-          command: "npx",
-          args: ["-y", "mcp-remote", "https://sse.example.com/sse"],
-        },
-        "spotdb-streamable": {
-          command: "npx",
-          args: ["-y", "mcp-remote", "https://stream.example.com/mcp"],
-        },
-      },
-    });
-
-    expect(extracted?.name).toBe("spotdb-sse");
-    expect(extracted?.config.args).toContain("https://sse.example.com/sse");
-  });
-
-  it("skips leading servers that do not normalize", () => {
-    expect(
-      extractMcpServerConfig({
-        mcpServers: {
-          broken: { transport: "sse", url: "https://example.com/sse" },
-          usable: { type: "http", url: "https://api.example.com/mcp" },
-        },
-      })?.name,
-    ).toBe("usable");
-  });
-
-  it("returns null when no server in a multi-server map normalizes", () => {
-    expect(
-      extractMcpServerConfig({
-        mcpServers: {
-          a: { transport: "sse", url: "https://a.example.com/sse" },
-          b: { type: "http", url: "http://insecure.example.com/mcp" },
-        },
-      }),
-    ).toBeNull();
-  });
-
-  it("returns null when the payload or its mcpServers is not a record", () => {
-    // parsed value is not a record (number, or a JSON scalar string)
-    expect(extractMcpServerConfig(42)).toBeNull();
-    expect(extractMcpServerConfig('"just-a-string"')).toBeNull();
-    // mcpServers is present but not a record
-    expect(extractMcpServerConfig({ mcpServers: "nope" })).toBeNull();
   });
 });
 
@@ -445,97 +403,27 @@ describe("resolveMcpInstallConfig", () => {
     ).toBeNull();
   });
 
-  it("keeps arbitrary stdio commands valid metadata but out of one-click install", () => {
-    const shellConfig = {
-      command: "bash",
-      args: ["-lc", "touch /tmp/heyclaude-owned"],
-    };
-
-    // Still valid registry metadata - the entry renders its own configSnippet.
-    expect(normalizeMcpServerConfig(shellConfig)).toMatchObject({
-      type: "stdio",
-      command: "bash",
-      args: ["-lc", "touch /tmp/heyclaude-owned"],
-    });
-
-    // But it is never advertised as one-click installable.
-    expect(mcpInstallTargetsForConfig(shellConfig)).toEqual([]);
-    expect(
-      resolveMcpInstallConfig({
-        category: "mcp",
-        slug: "shell-one-liner",
-        configSnippet: JSON.stringify({ mcpServers: { shell: shellConfig } }),
-      }),
-    ).toBeNull();
-  });
-
-  it("allows only bare npx/uvx stdio commands for one-click install", () => {
-    for (const command of ["npx", "uvx", "NPX", " uvx "]) {
-      expect(mcpInstallTargetsForConfig({ command })).toEqual(ALL_TARGETS);
-    }
-
-    for (const command of [
-      "node",
-      "docker",
-      "python3",
-      "sh",
-      "npx-evil",
-      // Path-qualified lookalikes must not slip past the allowlist.
-      "/usr/local/bin/npx",
-      "./npx",
-      "C:\\tools\\uvx.exe",
-    ]) {
-      expect(mcpInstallTargetsForConfig({ command })).toEqual([]);
-      for (const target of ALL_TARGETS) {
-        expect(mcpConfigSupportsTarget({ command }, target)).toBe(false);
-      }
-    }
-  });
-
-  it("leaves remote install targets unaffected by the stdio allowlist", () => {
-    expect(
-      mcpInstallTargetsForConfig({
-        type: "http",
-        url: "https://example.com/mcp",
-      }),
-    ).toEqual(ALL_TARGETS);
-  });
-
-  it("keeps compatibility answers available via oneClick: false", () => {
-    const shellConfig = { command: "docker", args: ["run", "example/mcp"] };
-
-    expect(mcpInstallTargetsForConfig(shellConfig)).toEqual([]);
-    expect(
-      mcpInstallTargetsForConfig(shellConfig, { oneClick: false }),
-    ).toEqual(ALL_TARGETS);
-    expect(
-      mcpConfigSupportsTarget(shellConfig, "cursor", { oneClick: false }),
-    ).toBe(true);
-
-    // The opt-out only relaxes the stdio allowlist - it never revives a config
-    // that fails normalization, nor codex's transport limits.
-    expect(
-      mcpInstallTargetsForConfig(
-        { type: "sse", url: "https://example.com/sse" },
-        { oneClick: false },
-      ),
-    ).not.toContain("codex");
-    expect(
-      mcpConfigSupportsTarget({ command: "" }, "cursor", { oneClick: false }),
-    ).toBe(false);
-
-    expect(
-      resolveMcpInstallConfig(
-        {
-          category: "mcp",
-          slug: "docker-server",
-          configSnippet: JSON.stringify({
-            mcpServers: { example: shellConfig },
-          }),
+  it("keeps arbitrary stdio commands valid for registry metadata", () => {
+    const resolved = resolveMcpInstallConfig({
+      category: "mcp",
+      slug: "shell-one-liner",
+      configSnippet: JSON.stringify({
+        mcpServers: {
+          shell: {
+            command: "bash",
+            args: ["-lc", "touch /tmp/heyclaude-owned"],
+          },
         },
-        { oneClick: false },
-      ),
-    ).toMatchObject({ targets: ALL_TARGETS, config: { command: "docker" } });
+      }),
+    });
+    expect(resolved).toMatchObject({
+      targets: ALL_TARGETS,
+      config: {
+        type: "stdio",
+        command: "bash",
+        args: ["-lc", "touch /tmp/heyclaude-owned"],
+      },
+    });
   });
 
   it("allows loopback http urls in install metadata", () => {

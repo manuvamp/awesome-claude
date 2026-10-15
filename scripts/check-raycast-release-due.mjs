@@ -7,18 +7,15 @@ import { pathToFileURL } from "node:url";
 import {
   buildRaycastReleaseIssue,
   buildRaycastReleaseReport,
-  COMMIT_LOG_FORMAT,
   isTrustedReleaseWatchIssue,
   latestSemverTag,
-  parseCommitLog,
-  parseReleaseWatchArgs,
   RAYCAST_RELEASE_DUE_MARKER,
 } from "./lib/release-watch-core.mjs";
 
 const PACKAGE_JSON_PATH = "integrations/raycast/package.json";
 
 async function main() {
-  const args = parseReleaseWatchArgs(process.argv.slice(2));
+  const args = parseArgs(process.argv.slice(2));
   const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf8"));
   const latestTag = latestSemverTag(readTags("raycast-v*"), "raycast-v");
   const commits = readCommits(latestTag ? `${latestTag.tag}..HEAD` : "HEAD");
@@ -47,6 +44,23 @@ async function main() {
   }
 }
 
+function parseArgs(argv) {
+  const args = { json: false, output: null, upsertIssue: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--json") {
+      args.json = true;
+    } else if (arg === "--output") {
+      args.output = argv[++index];
+    } else if (arg === "--upsert-issue") {
+      args.upsertIssue = true;
+    } else {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+  }
+  return args;
+}
+
 function readTags(pattern) {
   return git(["tag", "--list", pattern, "--sort=-v:refname"])
     .split("\n")
@@ -54,15 +68,25 @@ function readTags(pattern) {
 }
 
 function readCommits(revisionRange) {
-  return parseCommitLog(
-    git([
-      "log",
-      "--reverse",
-      "--no-merges",
-      `--format=${COMMIT_LOG_FORMAT}`,
-      revisionRange,
-    ]),
-  ).map((commit) => ({ ...commit, files: readCommitFiles(commit.sha) }));
+  const format = "%x1e%H%x1f%s";
+  return git([
+    "log",
+    "--reverse",
+    "--no-merges",
+    `--format=${format}`,
+    revisionRange,
+  ])
+    .split("\x1e")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [sha, subject] = entry.split("\x1f");
+      return {
+        sha,
+        subject: subject?.split("\n")[0] ?? "",
+        files: readCommitFiles(sha),
+      };
+    });
 }
 
 function readCommitFiles(sha) {

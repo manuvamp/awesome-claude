@@ -9,7 +9,6 @@ import * as registryModule from "../packages/mcp/src/registry.js";
 import * as schemaModule from "../packages/mcp/src/schemas.js";
 import {
   callRegistryTool,
-  compareEntries,
   compareEntryTrust,
   getClientSetup,
   getRegistryPrompt,
@@ -19,7 +18,6 @@ import {
   planWorkflowToolbox,
   READ_ONLY_TOOL_NAMES,
   readRegistryResource,
-  reviewEntrySafety,
   TOOL_DEFINITIONS,
 } from "../packages/mcp/src/registry.js";
 import {
@@ -1600,95 +1598,6 @@ describe("HeyClaude read-only MCP helpers", () => {
     });
   });
 
-  // Regression (#5583): both functions are public exports of
-  // `@heyclaude/mcp/registry`, so a direct caller bypasses the Zod schema that
-  // guards only the MCP-protocol dispatch path. Without their own bounds check
-  // they silently returned a degenerate empty result or an unbounded one.
-  it("rejects direct compareEntries calls outside the 2-5 entry window", async () => {
-    const empty = await compareEntries({ entries: [] }, { dataDir });
-    expect(empty).toMatchObject({
-      ok: false,
-      error: { code: "invalid_request" },
-    });
-
-    const tooFew = await compareEntries(
-      { entries: [{ category: skill.category, slug: skill.slug }] },
-      { dataDir },
-    );
-    expect(tooFew).toMatchObject({
-      ok: false,
-      error: { code: "invalid_request" },
-    });
-
-    const tooMany = await compareEntries(
-      {
-        entries: Array.from({ length: 6 }, (_, index) => ({
-          category: skill.category,
-          slug: `placeholder-${index}`,
-        })),
-      },
-      { dataDir },
-    );
-    expect(tooMany).toMatchObject({
-      ok: false,
-      error: { code: "invalid_request" },
-    });
-
-    const missingEntries = await compareEntries({}, { dataDir });
-    expect(missingEntries).toMatchObject({
-      ok: false,
-      error: { code: "invalid_request" },
-    });
-  });
-
-  it("rejects direct reviewEntrySafety calls outside the 1-5 entry window", async () => {
-    const empty = await reviewEntrySafety({ entries: [] }, { dataDir });
-    expect(empty).toMatchObject({
-      ok: false,
-      error: { code: "invalid_request" },
-    });
-
-    const tooMany = await reviewEntrySafety(
-      {
-        entries: Array.from({ length: 6 }, (_, index) => ({
-          category: skill.category,
-          slug: `placeholder-${index}`,
-        })),
-      },
-      { dataDir },
-    );
-    expect(tooMany).toMatchObject({
-      ok: false,
-      error: { code: "invalid_request" },
-    });
-
-    const missingEntries = await reviewEntrySafety({}, { dataDir });
-    expect(missingEntries).toMatchObject({
-      ok: false,
-      error: { code: "invalid_request" },
-    });
-  });
-
-  it("keeps in-range direct compareEntries and reviewEntrySafety calls working", async () => {
-    // Lower bound of each window: 2 for compare, 1 for safety.
-    const compared = await compareEntries(
-      {
-        entries: [
-          { category: skill.category, slug: skill.slug },
-          { category: otherSkill.category, slug: otherSkill.slug },
-        ],
-      },
-      { dataDir },
-    );
-    expect(compared).toMatchObject({ ok: true, count: 2 });
-
-    const reviewed = await reviewEntrySafety(
-      { entries: [{ category: skill.category, slug: skill.slug }] },
-      { dataDir },
-    );
-    expect(reviewed).toMatchObject({ ok: true, count: 1 });
-  });
-
   it("returns not_found when an entry.coverage entry is missing", async () => {
     const result = await callRegistryTool(
       "entry.coverage",
@@ -2626,50 +2535,17 @@ describe("HeyClaude read-only MCP helpers", () => {
         path.join(repoRoot, "packages/mcp/src/registry.js"),
         "utf8",
       );
-      const responseLibSource = fs.readFileSync(
-        path.join(repoRoot, "packages/mcp/src/registry-response-lib.js"),
-        "utf8",
-      );
-      const resourceMetadataLibSource = fs.readFileSync(
-        path.join(
-          repoRoot,
-          "packages/mcp/src/registry-resource-metadata-lib.js",
-        ),
-        "utf8",
-      );
-      const publicApiLibSource = fs.readFileSync(
-        path.join(repoRoot, "packages/mcp/src/registry-public-api-lib.js"),
-        "utf8",
-      );
-      const fetchLibSource = fs.readFileSync(
-        path.join(repoRoot, "packages/mcp/src/registry-fetch-lib.js"),
-        "utf8",
-      );
-      const discoveryProjectionLibSource = fs.readFileSync(
-        path.join(
-          repoRoot,
-          "packages/mcp/src/registry-discovery-projection-lib.js",
-        ),
-        "utf8",
-      );
-      const orchestrationLibSource = fs.readFileSync(
-        path.join(
-          repoRoot,
-          "packages/mcp/src/registry-tool-orchestration-lib.js",
-        ),
-        "utf8",
-      );
 
-      const requireDocstringBefore = (
-        declaration: string,
-        source = registrySource,
-      ) => {
-        const index = source.indexOf(declaration);
+      const requireDocstringBefore = (declaration: string) => {
+        const index = registrySource.indexOf(declaration);
         expect(
           index,
           `Expected to find declaration: ${declaration}`,
         ).toBeGreaterThan(-1);
-        const preceding = source.slice(Math.max(0, index - 4000), index);
+        const preceding = registrySource.slice(
+          Math.max(0, index - 4000),
+          index,
+        );
         const trimmed = preceding.trimEnd();
         expect(
           trimmed.endsWith("*/"),
@@ -2684,39 +2560,15 @@ describe("HeyClaude read-only MCP helpers", () => {
         expect(block.length).toBeGreaterThan(40);
       };
 
-      requireDocstringBefore(
-        "export async function listRegistryRecent(",
-        orchestrationLibSource,
-      );
-      requireDocstringBefore(
-        "export async function listRegistryTrending(",
-        orchestrationLibSource,
-      );
-      requireDocstringBefore(
-        "export async function listJobsActive(",
-        orchestrationLibSource,
-      );
-      requireDocstringBefore(
-        "export async function fetchPublicApiJson(",
-        fetchLibSource,
-      );
-      requireDocstringBefore(
-        "export function publicApiBaseUrl(",
-        publicApiLibSource,
-      );
-      requireDocstringBefore("export function unavailable(", responseLibSource);
-      requireDocstringBefore(
-        "export function toTrendingEntry(",
-        discoveryProjectionLibSource,
-      );
-      requireDocstringBefore(
-        "export function toJobEntry(",
-        discoveryProjectionLibSource,
-      );
-      requireDocstringBefore(
-        "export const DISCOVERY_RESOURCES = [",
-        resourceMetadataLibSource,
-      );
+      requireDocstringBefore("export async function listRegistryRecent(");
+      requireDocstringBefore("export async function listRegistryTrending(");
+      requireDocstringBefore("export async function listJobsActive(");
+      requireDocstringBefore("async function fetchPublicApiJson(");
+      requireDocstringBefore("function publicApiBaseUrl(");
+      requireDocstringBefore("function unavailable(");
+      requireDocstringBefore("function toTrendingEntry(");
+      requireDocstringBefore("function toJobEntry(");
+      requireDocstringBefore("const DISCOVERY_RESOURCES = [");
     });
 
     it("lists discovery resources alongside the directory and category feeds", async () => {

@@ -46,11 +46,6 @@ describe("PR preview artifact validation flow", () => {
       "https://gittensory.aethereal.dev",
       "https://heyclaude-dev.zeronode.workers.dev",
       "https://dev.heyclau.de",
-      // Sibling workers whose name/subdomain merely contains the substring
-      // "heyclaude-prod" must not be mistaken for the prod worker.
-      "https://heyclaude-prod-next.zeronode.workers.dev",
-      "https://v1-heyclaude-prod-staging.zeronode.workers.dev",
-      "https://preview.heyclaude-prod.otheracct.workers.dev",
     ]) {
       expect(
         selectPreviewUrl([{ url, source: "github-deployment:x" }]),
@@ -405,24 +400,5 @@ describe("resolveFromPrComments — reads the Cloudflare Workers Builds PR comme
       await resolveFromPrComments({ pull_request: { number: 2 } }, env),
     ).toBeNull();
     expect(await resolveFromPrComments({}, env)).toBeNull();
-  });
-
-  it("bounds the GitHub API fetch with an abort-timeout signal so a hung request can't outlast the poll deadline", async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify([]), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await resolveFromPrComments({ pull_request: { number: 4045 } }, env);
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
-    expect(init?.signal).toBeInstanceOf(AbortSignal);
-    // A real AbortSignal.timeout(...) is live and un-aborted at call time.
-    expect(init?.signal?.aborted).toBe(false);
   });
 });

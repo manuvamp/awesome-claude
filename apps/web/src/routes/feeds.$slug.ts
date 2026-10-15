@@ -9,9 +9,8 @@ import {
   respondFeed,
   SITE_NAME,
   trendingItems,
+  type SavedSearchQuery,
 } from "@/lib/feeds";
-import { absolutizeFeedLinks, feedLastBuilt } from "@/lib/feed-items-lib";
-import { savedSearchQueryFromParams } from "@/lib/saved-search-query-lib";
 import type { Category } from "@/types/registry";
 
 const CHANGELOG_STREAMS = ["release", "policy", "security"] as const;
@@ -42,7 +41,13 @@ export const Route = createFileRoute("/feeds/$slug")({
           title = `${SITE_NAME} — ${stream} notes`;
           description = `${stream} notes on ${SITE_NAME}.`;
         } else if (slug === "saved") {
-          const q = savedSearchQueryFromParams(url.searchParams);
+          const q: SavedSearchQuery = {
+            q: url.searchParams.get("q") ?? undefined,
+            category: url.searchParams.get("category") ?? undefined,
+            trust: url.searchParams.get("trust") ?? undefined,
+            source: url.searchParams.get("source") ?? undefined,
+            platform: url.searchParams.get("platform") ?? undefined,
+          };
           const label = url.searchParams.get("label") ?? "Saved search";
           items = applySavedSearch(q);
           title = `${SITE_NAME} — ${label}`;
@@ -55,8 +60,11 @@ export const Route = createFileRoute("/feeds/$slug")({
           throw notFound();
         }
 
-        const linked = absolutizeFeedLinks(items, base);
-        const lastBuilt = feedLastBuilt(linked);
+        const linked = items.map((i) => ({
+          ...i,
+          link: i.link.startsWith("http") ? i.link : `${base}${i.link}`,
+        }));
+        const lastBuilt = linked.length ? linked[0].pubDate : new Date(0).toISOString();
         const xml = buildRss({
           title,
           description,

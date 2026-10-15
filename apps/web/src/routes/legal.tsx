@@ -1,52 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Breadcrumbs } from "@/components/breadcrumbs";
-import { trackEvent } from "@/lib/analytics";
-import {
-  legalPageEgressAnalyticsData,
-  legalPageEgressAnalyticsEvent,
-  legalPageEgressDestination,
-  legalPageSectionAnalyticsData,
-  legalPageSectionAnalyticsEvent,
-  legalPageSectionDestination,
-  type LegalPageDestination,
-  type LegalPageSectionId,
-} from "@/lib/legal-page-cta-events";
 import { absoluteUrl } from "@/lib/seo";
-
-function trackLegalEgress(destination: LegalPageDestination) {
-  trackEvent(legalPageEgressAnalyticsEvent(), legalPageEgressAnalyticsData(destination));
-}
-
-function LegalEgressLink({
-  destination,
-  children,
-  className = "text-ink underline",
-}: {
-  destination: LegalPageDestination;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  const dest = legalPageEgressDestination(destination);
-  if (!dest) return <>{children}</>;
-  if (dest.kind === "href") {
-    return (
-      <a
-        className={className}
-        href={dest.href}
-        target="_blank"
-        rel="noreferrer"
-        onClick={() => trackLegalEgress(destination)}
-      >
-        {children}
-      </a>
-    );
-  }
-  return (
-    <Link to={dest.to} onClick={() => trackLegalEgress(destination)} className={className}>
-      {children}
-    </Link>
-  );
-}
 
 export const Route = createFileRoute("/legal")({
   head: () => ({
@@ -68,7 +22,7 @@ export const Route = createFileRoute("/legal")({
   component: LegalPage,
 });
 
-const SECTIONS: { id: LegalPageSectionId; label: string }[] = [
+const SECTIONS = [
   { id: "terms", label: "Terms of use" },
   { id: "privacy", label: "Privacy" },
   { id: "content", label: "Content policy" },
@@ -87,25 +41,15 @@ function LegalPage() {
           <h1 className="mt-2 h-display-2 text-ink text-balance">Plain-English legal</h1>
           <p className="mt-2 text-xs text-ink-muted">Last updated 2026-05-26.</p>
           <nav className="mt-5 space-y-1 text-sm">
-            {SECTIONS.map((s, rowIndex) => {
-              const destination = legalPageSectionDestination(s.id);
-              if (!destination) return null;
-              return (
-                <a
-                  key={s.id}
-                  href={destination.href}
-                  onClick={() =>
-                    trackEvent(
-                      legalPageSectionAnalyticsEvent(),
-                      legalPageSectionAnalyticsData(s.id, rowIndex, SECTIONS.length),
-                    )
-                  }
-                  className="block rounded-md px-2 py-1 text-ink-muted hover:bg-surface-2 hover:text-ink"
-                >
-                  {s.label}
-                </a>
-              );
-            })}
+            {SECTIONS.map((s) => (
+              <a
+                key={s.id}
+                href={`#${s.id}`}
+                className="block rounded-md px-2 py-1 text-ink-muted hover:bg-surface-2 hover:text-ink"
+              >
+                {s.label}
+              </a>
+            ))}
           </nav>
         </aside>
 
@@ -125,10 +69,14 @@ function LegalPage() {
           <Section id="content" title="Content policy">
             Submitted resources must be free to use, source-backed, and not malicious. Commercial
             tools go through the{" "}
-            <LegalEgressLink destination="advertise">commercial intake</LegalEgressLink> and are
-            clearly labeled. Jobs go through{" "}
-            <LegalEgressLink destination="jobs-post">post a job</LegalEgressLink>. Maintainers may
-            remove anything that violates these rules.
+            <Link to="/advertise" className="text-ink underline">
+              commercial intake
+            </Link>{" "}
+            and are clearly labeled. Jobs go through{" "}
+            <Link to="/jobs/post" className="text-ink underline">
+              post a job
+            </Link>
+            . Maintainers may remove anything that violates these rules.
           </Section>
 
           <Section id="trademarks" title="Trademarks">
@@ -138,15 +86,32 @@ function LegalPage() {
 
           <Section id="dmca" title="DMCA and takedown">
             If you're an author or maintainer and want a listing removed, claimed, or corrected, use{" "}
-            <LegalEgressLink destination="claim">claim a listing</LegalEgressLink> or open an issue
-            on the public repo.
+            <Link to="/claim" className="text-ink underline">
+              claim a listing
+            </Link>{" "}
+            or open an issue on the public repo.
           </Section>
 
           <Section id="contact" title="Contact">
             Reach maintainers via the{" "}
-            <LegalEgressLink destination="github-issues">GitHub issue tracker</LegalEgressLink>. The
-            full policy texts live on{" "}
-            <LegalEgressLink destination="github-repo">GitHub</LegalEgressLink>.
+            <a
+              className="text-ink underline"
+              href="https://github.com/jsonbored/awesome-claude/issues"
+              target="_blank"
+              rel="noreferrer"
+            >
+              GitHub issue tracker
+            </a>
+            . The full policy texts live on{" "}
+            <a
+              className="text-ink underline"
+              href="https://github.com/jsonbored/awesome-claude"
+              target="_blank"
+              rel="noreferrer"
+            >
+              GitHub
+            </a>
+            .
           </Section>
         </div>
       </div>

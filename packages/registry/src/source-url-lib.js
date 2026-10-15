@@ -9,9 +9,7 @@
  * re-exports everything below so existing imports stay unchanged.
  */
 
-import { RESERVED_OWNERS } from "./source-repo-lib.js";
-
-export const AFFILIATE_PARAMS = new Set([
+const AFFILIATE_PARAMS = new Set([
   "aff",
   "affiliate",
   "affiliate_id",
@@ -19,11 +17,9 @@ export const AFFILIATE_PARAMS = new Set([
   "coupon",
   "irclickid",
   "partner",
-  "partner_id",
   "ref",
   "referral",
   "referral_code",
-  "tag",
   "via",
 ]);
 
@@ -44,141 +40,6 @@ const ANALYTICS_PARAMS = new Set([
   "twclid",
   "yclid",
 ]);
-
-function parseUrl(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-  try {
-    return new URL(text);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Return true when a URL embeds credentials in the userinfo component.
- *
- * @param {unknown} value
- * @returns {boolean}
- */
-export function hasEmbeddedUrlUserinfo(value) {
-  const url = parseUrl(value);
-  if (!url) return false;
-  return Boolean(url.username || url.password);
-}
-
-/**
- * Return true when a URL uses HTTPS without embedded userinfo credentials.
- * Empty values are treated as valid so optional submission fields stay optional.
- *
- * @param {unknown} value
- * @returns {boolean}
- */
-export function isPublicHttpsUrl(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return true;
-  const url = parseUrl(value);
-  if (!url) return false;
-  return (
-    url.protocol === "https:" && url.username === "" && url.password === ""
-  );
-}
-
-/**
- * Return true when a URL uses HTTP or HTTPS without embedded userinfo.
- * Empty values are treated as valid so optional fields stay optional.
- *
- * @param {unknown} value
- * @returns {boolean}
- */
-export function isPublicHttpUrl(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return true;
-  const url = parseUrl(value);
-  if (!url) return false;
-  return (
-    (url.protocol === "https:" || url.protocol === "http:") &&
-    url.username === "" &&
-    url.password === ""
-  );
-}
-
-/**
- * Return the normalized hostname for a URL, or "" when invalid or credential-bearing.
- *
- * @param {unknown} value
- * @returns {string}
- */
-export function publicUrlHostname(value) {
-  const url = parseUrl(value);
-  if (!url || url.username || url.password) return "";
-  return url.hostname.replace(/^www\./i, "").toLowerCase();
-}
-
-/**
- * Return the canonical href for a public HTTP(S) URL, or "" when invalid.
- *
- * @param {unknown} value
- * @returns {string}
- */
-export function publicHttpUrlHref(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return "";
-  const url = parseUrl(value);
-  if (!url || url.username || url.password) return "";
-  if (url.protocol !== "https:" && url.protocol !== "http:") return "";
-  return url.href;
-}
-
-/**
- * Return true for a single-segment GitHub profile URL without embedded userinfo.
- *
- * The single path segment must be a real account name, not a GitHub product
- * surface: `github.com/features`, `github.com/sponsors`, and `github.com/about`
- * are reserved pages, never user profiles. The reserved set is shared with the
- * repo-URL parser (`RESERVED_OWNERS`) so the two classifiers stay in sync.
- *
- * @param {unknown} value
- * @returns {boolean}
- */
-export function isPublicGitHubProfileUrl(value) {
-  const url = parseUrl(value);
-  if (!url) return false;
-  const segments = url.pathname.split("/").filter(Boolean);
-  const hostname = url.hostname.replace(/^www\./i, "").toLowerCase();
-  return (
-    url.protocol === "https:" &&
-    url.username === "" &&
-    url.password === "" &&
-    hostname === "github.com" &&
-    segments.length === 1 &&
-    !RESERVED_OWNERS.has(segments[0].toLowerCase())
-  );
-}
-
-/**
- * Return true when a URL resolves to github.com or a *.github.com host over
- * HTTP(S) and without embedded userinfo. The protocol guard matches the other
- * public-URL validators here (`isPublicHttpUrl`, `publicHttpUrlHref`): a
- * non-http(s) URL such as `ftp://github.com/x` or `ws://raw.github.com/x` is
- * not a public GitHub web URL even though its hostname is a GitHub host.
- *
- * @param {unknown} value
- * @returns {boolean}
- */
-export function isPublicGitHubHostUrl(value) {
-  const url = parseUrl(value);
-  if (
-    !url ||
-    url.username ||
-    url.password ||
-    (url.protocol !== "https:" && url.protocol !== "http:")
-  ) {
-    return false;
-  }
-  const hostname = url.hostname.replace(/^www\./i, "").toLowerCase();
-  return hostname === "github.com" || hostname.endsWith(".github.com");
-}
 
 function normalizeParamName(name) {
   return String(name ?? "")
@@ -227,39 +88,6 @@ export function hasAffiliateParam(value) {
 }
 
 /**
- * True when a URL's path contains an explicit affiliate/referral segment
- * (`/referral/`, `/affiliate/`, `/partners/`, bare `/ref` or `/refer` terminal
- * segment). Query-param checks live in `isAffiliateParam`/`hasAffiliateParam`.
- *
- * @param {unknown} value
- * @returns {boolean}
- */
-export function hasAffiliatePath(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return false;
-  try {
-    const pathname = new URL(text).pathname;
-    if (/\/(referral|affiliate|partners?)(?:\/|$)/i.test(pathname)) return true;
-    return /^\/(ref|refer)\/?$/i.test(pathname);
-  } catch {
-    return /\b(affiliate|referral|ref=|via=)\b/i.test(text);
-  }
-}
-
-/**
- * True when a URL carries any affiliate signal — either a tracked query param
- * (via `isAffiliateParam`) or an affiliate path segment (via `hasAffiliatePath`).
- * This combines the query-param-only `hasAffiliateParam` with path-based checks
- * so both field validators and snippet scanners agree on the same detection.
- *
- * @param {unknown} value
- * @returns {boolean}
- */
-export function isLikelyAffiliateUrl(value) {
-  return hasAffiliateParam(value) || hasAffiliatePath(value);
-}
-
-/**
  * Strip known tracking query params while preserving meaningful params.
  *
  * @param {unknown} value
@@ -294,8 +122,6 @@ export function canonicalizeSourceUrl(value) {
   if (!stripped) return "";
   try {
     const url = new URL(stripped);
-    url.username = "";
-    url.password = "";
     url.hash = "";
     url.protocol = url.protocol.toLowerCase();
     url.hostname = url.hostname.replace(/^www\./i, "").toLowerCase();

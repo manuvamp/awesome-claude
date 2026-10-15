@@ -1,18 +1,21 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { Rocket, ShieldCheck, Database, Zap, Wrench } from "lucide-react";
-import { trackEvent } from "@/lib/analytics";
-import {
-  homeIntentBrowseSearch,
-  homeIntentSelectAnalyticsData,
-  homeIntentSelectAnalyticsEvent,
-} from "@/lib/home-page-cta-events";
 import { cn } from "@/lib/utils";
 
 export type Intent = {
   id: string;
   label: string;
   Icon: React.ElementType;
+  /** Search params to apply when chosen. */
+  search: {
+    q?: string;
+    category?: string;
+    trust?: string;
+    source?: string;
+    platform?: string;
+    sort?: "popular" | "newest" | "title";
+  };
 };
 
 export const INTENTS: Intent[] = [
@@ -20,26 +23,31 @@ export const INTENTS: Intent[] = [
     id: "ship-faster",
     label: "Ship faster",
     Icon: Rocket,
+    search: { category: "agents", sort: "popular" },
   },
   {
     id: "review-safely",
     label: "Review code safely",
     Icon: ShieldCheck,
+    search: { q: "code review", trust: "trusted", sort: "popular" },
   },
   {
     id: "connect-data",
     label: "Connect data",
     Icon: Database,
+    search: { category: "mcp", sort: "popular" },
   },
   {
     id: "automate",
     label: "Automate workflows",
     Icon: Zap,
+    search: { q: "automation", category: "hooks", sort: "popular" },
   },
   {
     id: "harden-agents",
     label: "Harden agents",
     Icon: Wrench,
+    search: { category: "hooks", trust: "trusted", sort: "popular" },
   },
 ];
 
@@ -55,24 +63,11 @@ export function IntentChips({
       <span className="eyebrow mr-1">What are you building?</span>
       {INTENTS.map((i) => {
         const Icon = i.Icon;
-        const search = homeIntentBrowseSearch(i.id);
-        if (!search) return null;
         return (
           <Link
             key={i.id}
             to="/browse"
-            search={search}
-            onClick={() =>
-              trackEvent(
-                homeIntentSelectAnalyticsEvent(),
-                homeIntentSelectAnalyticsData(
-                  i.id,
-                  Boolean(search.q),
-                  Boolean(search.category),
-                  Boolean(search.trust),
-                ),
-              )
-            }
+            search={i.search}
             className={cn(
               "group inline-flex items-center gap-1.5 rounded-full border border-border bg-surface text-ink-muted transition-colors duration-200 ease-out hover:border-accent/40 hover:bg-accent/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
               size === "sm" ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs",

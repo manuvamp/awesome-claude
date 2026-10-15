@@ -1,46 +1,21 @@
 import * as React from "react";
-import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router";
-import { z } from "zod";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { PageContainer } from "@/components/page-container";
 import { PageHeader } from "@/components/page-header";
 import { CategoryPill } from "@/components/badges";
-import { getIndexableTagGroups } from "@/lib/tags";
-import { toTagView, type TagView } from "@/lib/tag-view-lib";
-import { trackEvent } from "@/lib/analytics";
-import {
-  tagsIndexBrowseEgressAnalyticsData,
-  tagsIndexBrowseEgressAnalyticsEvent,
-  tagsIndexBrowseEgressDestination,
-  tagsIndexFilterAnalyticsData,
-  tagsIndexFilterAnalyticsEvent,
-  tagsIndexTagSelectAnalyticsData,
-  tagsIndexTagSelectAnalyticsEvent,
-  tagsIndexTagSelectDestination,
-  type TagsIndexTagVariant,
-} from "@/lib/tags-index-cta-events";
-import { breadcrumbScript, itemListScript } from "@/lib/seo-jsonld";
+import { stringifyJsonLd } from "@/lib/json-ld";
 import { absoluteUrl } from "@/lib/seo";
+import { getIndexableTagGroups } from "@/lib/tags";
+import { trackEvent } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
-const defaultSearch = { q: "" };
-
-const tagsSearchSchema = z.object({
-  q: z.string().catch(defaultSearch.q).default(defaultSearch.q),
-});
-
 export const Route = createFileRoute("/tags/")({
-  validateSearch: tagsSearchSchema,
-  search: {
-    middlewares: [stripSearchParams(defaultSearch)],
-  },
   head: () => {
     const url = absoluteUrl("/tags");
     const title = "Browse Claude resources by tag — HeyClaude";
     const description =
       "Topic index for the HeyClaude directory: browse Claude Code MCP servers, agents, skills, hooks, commands, and rules by tag.";
-    // Same indexable tags the page renders (featured strip + All topics grid).
-    const tags = getIndexableTagGroups().map(toTagView);
     return {
       meta: [
         { title },
@@ -51,35 +26,56 @@ export const Route = createFileRoute("/tags/")({
         { name: "twitter:card", content: "summary_large_image" },
       ],
       links: [{ rel: "canonical", href: url }],
-      // BreadcrumbList + ItemList for every /tags/$tag link rendered below (#5631).
       scripts: [
-        breadcrumbScript([
-          { name: "Directory", path: "/browse" },
-          { name: "Tags", path: "/tags" },
-        ]),
-        itemListScript(
-          tags.map((tag) => ({
-            name: tag.name,
-            path: `/tags/${tag.slug}`,
-          })),
-          { name: "Claude resource tags" },
-        ),
+        {
+          type: "application/ld+json",
+          children: stringifyJsonLd({
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Directory", item: absoluteUrl("/browse") },
+              { "@type": "ListItem", position: 2, name: "Tags", item: url },
+            ],
+          }),
+        },
       ],
     };
   },
   component: TagsIndex,
 });
 
+type TagView = {
+  slug: string;
+  name: string;
+  count: number;
+  topCategory: string;
+  categoryCount: number;
+};
+
 // Derive a lightweight, sorted view-model (by entry count desc) with the category
 // each tag mostly spans — enough context to make the index scannable.
-function FeaturedTagCard({ tag, onSelect }: { tag: TagView; onSelect: () => void }) {
-  const destination = tagsIndexTagSelectDestination(tag.slug);
-  if (!destination) return null;
+function buildTagViews(): TagView[] {
+  return getIndexableTagGroups().map((group) => {
+    const catCounts = new Map<string, number>();
+    for (const entry of group.entries) {
+      catCounts.set(entry.category, (catCounts.get(entry.category) ?? 0) + 1);
+    }
+    const sorted = [...catCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    return {
+      slug: group.slug,
+      name: group.name,
+      count: group.entries.length,
+      topCategory: sorted[0]?.[0] ?? "",
+      categoryCount: sorted.length,
+    };
+  });
+}
+
+function FeaturedTagCard({ tag }: { tag: TagView }) {
   return (
     <Link
-      to={destination.to}
-      params={destination.params}
-      onClick={onSelect}
+      to="/tags/$tag"
+      params={{ tag: tag.slug }}
       className="group flex flex-col rounded-xl border border-border bg-surface p-4 transition-colors duration-200 ease-out hover:border-border-strong hover:bg-surface-2"
     >
       <div className="flex items-baseline justify-between gap-2">
@@ -98,22 +94,11 @@ function FeaturedTagCard({ tag, onSelect }: { tag: TagView; onSelect: () => void
   );
 }
 
-function TagPill({
-  tag,
-  strong,
-  onSelect,
-}: {
-  tag: TagView;
-  strong?: boolean;
-  onSelect: () => void;
-}) {
-  const destination = tagsIndexTagSelectDestination(tag.slug);
-  if (!destination) return null;
+function TagPill({ tag, strong }: { tag: TagView; strong?: boolean }) {
   return (
     <Link
-      to={destination.to}
-      params={destination.params}
-      onClick={onSelect}
+      to="/tags/$tag"
+      params={{ tag: tag.slug }}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors duration-200 ease-out",
         strong
@@ -128,22 +113,8 @@ function TagPill({
 }
 
 function TagsIndex() {
-  const sp = Route.useSearch();
-  const navigate = Route.useNavigate();
-  const all = React.useMemo(() => getIndexableTagGroups().map(toTagView), []);
-  // Debounce free-text query: local state drives the input; URL updates 250ms after idle (#5712).
-  const [query, setQuery] = React.useState(sp.q);
-  React.useEffect(() => {
-    setQuery(sp.q);
-  }, [sp.q]);
-  React.useEffect(() => {
-    if (query === sp.q) return;
-    const t = window.setTimeout(() => {
-      navigate({ search: (prev: typeof sp) => ({ ...prev, q: query }), replace: true });
-    }, 250);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  const all = React.useMemo(buildTagViews, []);
+  const [query, setQuery] = React.useState("");
   const q = query.trim().toLowerCase();
 
   const filtered = React.useMemo(
@@ -154,13 +125,6 @@ function TagsIndex() {
   const featured = all.slice(0, 8);
   // Subtle weighting: tags at/above the featured cutoff read as "strong" pills.
   const strongCutoff = featured[featured.length - 1]?.count ?? 0;
-
-  const onTagSelect = React.useCallback((tag: TagView, variant: TagsIndexTagVariant) => {
-    trackEvent(
-      tagsIndexTagSelectAnalyticsEvent(),
-      tagsIndexTagSelectAnalyticsData(tag.slug, tag.count, variant, tag.topCategory || undefined),
-    );
-  }, []);
 
   return (
     <PageContainer>
@@ -182,17 +146,7 @@ function TagsIndex() {
           onChange={(e) => {
             const next = e.target.value;
             setQuery(next);
-            const trimmed = next.trim();
-            if (trimmed.length >= 2) {
-              const needle = trimmed.toLowerCase();
-              const matchCount = all.filter(
-                (t) => t.name.toLowerCase().includes(needle) || t.slug.includes(needle),
-              ).length;
-              trackEvent(
-                tagsIndexFilterAnalyticsEvent(),
-                tagsIndexFilterAnalyticsData(trimmed.length, matchCount),
-              );
-            }
+            if (next.trim().length >= 2) trackEvent("tag-filter", { q: next.trim().slice(0, 64) });
           }}
           placeholder="Filter topics…"
           aria-label="Filter topics"
@@ -205,11 +159,7 @@ function TagsIndex() {
           <div className="eyebrow">Popular topics</div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {featured.map((tag) => (
-              <FeaturedTagCard
-                key={tag.slug}
-                tag={tag}
-                onSelect={() => onTagSelect(tag, "featured")}
-              />
+              <FeaturedTagCard key={tag.slug} tag={tag} />
             ))}
           </div>
         </section>
@@ -220,35 +170,15 @@ function TagsIndex() {
         {filtered.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2">
             {filtered.map((tag) => (
-              <TagPill
-                key={tag.slug}
-                tag={tag}
-                strong={tag.count >= strongCutoff}
-                onSelect={() => onTagSelect(tag, "pill")}
-              />
+              <TagPill key={tag.slug} tag={tag} strong={tag.count >= strongCutoff} />
             ))}
           </div>
         ) : (
           <p className="mt-4 text-sm text-ink-muted">
             No topics match “{query}”. Try a broader term, or{" "}
-            {(() => {
-              const destination = tagsIndexBrowseEgressDestination("browse");
-              if (!destination) return "browse the full directory";
-              return (
-                <Link
-                  to={destination.to}
-                  className="text-ink underline"
-                  onClick={() =>
-                    trackEvent(
-                      tagsIndexBrowseEgressAnalyticsEvent(),
-                      tagsIndexBrowseEgressAnalyticsData(),
-                    )
-                  }
-                >
-                  browse the full directory
-                </Link>
-              );
-            })()}
+            <Link to="/browse" className="text-ink underline">
+              browse the full directory
+            </Link>
             .
           </p>
         )}

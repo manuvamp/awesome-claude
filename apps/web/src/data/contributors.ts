@@ -1,14 +1,14 @@
 import { ENTRIES } from "@/data/entries";
 import { authorMatchesSubmitter, contributorSlug } from "@/lib/contributor-identity";
-import { isPublicGitHubProfileUrl } from "@heyclaude/registry/source-url";
 import type { Category, Contributor, Entry } from "@/types/registry";
 
 export { authorMatchesSubmitter, contributorSlug };
 
 export function githubHandle(profileUrl?: string) {
-  if (!profileUrl || !isPublicGitHubProfileUrl(profileUrl)) return undefined;
+  if (!profileUrl) return undefined;
   try {
     const url = new URL(profileUrl);
+    if (url.hostname !== "github.com") return undefined;
     return url.pathname.split("/").filter(Boolean)[0];
   } catch {
     return undefined;

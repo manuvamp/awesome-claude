@@ -14,7 +14,7 @@
  * working unchanged.
  */
 import { ENTRIES } from "@/data/entries";
-import { filterSearchEntries, normalizeSearchQuery, type TrustSignalFilter } from "@/data/search";
+import { filterSearchEntries, normalizeSearchQuery } from "@/data/search";
 import { CHANGELOG, RELEASE_NOTES } from "@/data/changelog";
 import {
   CATEGORIES,
@@ -53,18 +53,11 @@ export function rfc822(iso: string): string {
 }
 
 /**
- * Shared fallback `lastBuildDate`/`lastBuilt` for an empty feed. One constant so
- * the RSS/Atom body, `feedLastBuilt`, and the reported `FeedHealth.lastBuilt`
- * all agree for a feed with no items (instead of independently hardcoded epochs).
- */
-export const EMPTY_FEED_LAST_BUILT = "2025-01-01T00:00:00.000Z";
-
-/**
  * The newest `pubDate` across items, used as a deterministic build timestamp.
  * Falls back to a fixed epoch-ish date when the feed has no items so the body
  * (and therefore its ETag) stays stable.
  */
-export function latestPubDate(items: FeedItem[], fallback = EMPTY_FEED_LAST_BUILT): string {
+export function latestPubDate(items: FeedItem[], fallback = "2025-01-01T00:00:00.000Z"): string {
   if (items.length === 0) return fallback;
   return items.reduce((acc, i) => (i.pubDate > acc ? i.pubDate : acc), items[0].pubDate);
 }
@@ -204,7 +197,6 @@ export interface SavedSearchQuery {
   category?: string;
   trust?: string;
   source?: string;
-  signal?: string;
   platform?: string;
 }
 
@@ -215,7 +207,6 @@ export function applySavedSearch(q: SavedSearchQuery): FeedItem[] {
       categories: q.category ? [q.category as Category] : undefined,
       trust: q.trust ? [q.trust as TrustLevel] : undefined,
       source: q.source ? [q.source as SourceStatus] : undefined,
-      signal: q.signal ? (q.signal as TrustSignalFilter) : undefined,
       platforms: q.platform ? [q.platform as Platform] : undefined,
     },
     ENTRIES,

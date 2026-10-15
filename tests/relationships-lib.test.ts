@@ -101,18 +101,6 @@ describe("normalizeUrl", () => {
     expect(normalizeUrl("https://github.com/Acme/Widget.git")).toBe(
       "https://github.com/acme/widget",
     );
-    expect(normalizeUrl("https://token@github.com/acme/widget")).toBe(
-      "https://github.com/acme/widget",
-    );
-  });
-
-  it("strips a terminal .git suffix even when a trailing slash follows it", () => {
-    expect(normalizeUrl("https://github.com/Acme/Widget.git/")).toBe(
-      "https://github.com/acme/widget",
-    );
-    expect(normalizeUrl("https://github.com/Acme/Widget.git//")).toBe(
-      "https://github.com/acme/widget",
-    );
   });
 
   it("sorts remaining query params for stability", () => {
@@ -183,33 +171,6 @@ describe("sourceUrls", () => {
       ),
     ).toEqual(["https://docs.example.com/a"]);
   });
-
-  it("includes docsUrl, sourceUrl, packageUrl, repositoryUrl, and plural sourceUrls[]", () => {
-    expect(
-      sourceUrls(
-        entry({
-          docsUrl: "https://docs.example.com/x",
-          sourceUrl: "https://src.example.com/y",
-          packageUrl: "https://pkg.example.com/z",
-          repositoryUrl: "https://repo.example.com/w",
-          sourceUrls: [
-            "https://plural.example.com/v",
-            "https://plural.example.com/v",
-          ],
-        }),
-      ),
-    ).toEqual([
-      "https://docs.example.com/x",
-      "https://src.example.com/y",
-      "https://pkg.example.com/z",
-      "https://repo.example.com/w",
-      "https://plural.example.com/v",
-    ]);
-  });
-
-  it("ignores a non-array sourceUrls value", () => {
-    expect(sourceUrls(entry({ sourceUrls: "not-an-array" }))).toEqual([]);
-  });
 });
 
 describe("sourceDomains", () => {
@@ -246,12 +207,6 @@ describe("githubRepoKey", () => {
   it("returns owner/repo for a github repository", () => {
     expect(
       githubRepoKey(entry({ repoUrl: "https://github.com/Acme/Widget.git" })),
-    ).toBe("acme/widget");
-  });
-
-  it("keys a .git url with a trailing slash the same as without", () => {
-    expect(
-      githubRepoKey(entry({ repoUrl: "https://github.com/Acme/Widget.git/" })),
     ).toBe("acme/widget");
   });
 });
@@ -738,21 +693,6 @@ describe("buildRegistryRelationGraph", () => {
     expect(graph.generatedAt).toBe("2025-06-01T00:00:00.000Z");
   });
 
-  it("derives the same generatedAt regardless of entry order", () => {
-    const undated = entry({ slug: "undated" });
-    const dated = entry({
-      slug: "dated",
-      dateAdded: "2025-06-01",
-      contentUpdatedAt: "2026-02-03",
-    });
-
-    const undatedFirst = buildRegistryRelationGraph([undated, dated]);
-    const datedFirst = buildRegistryRelationGraph([dated, undated]);
-
-    expect(undatedFirst.generatedAt).toBe("2026-02-03T00:00:00.000Z");
-    expect(undatedFirst.generatedAt).toBe(datedFirst.generatedAt);
-  });
-
   it("indexes candidates via shared repo, url, domain, token, and collection refs", () => {
     const member = entry({
       category: "skills",
@@ -809,28 +749,6 @@ describe("buildRegistryRelationGraph", () => {
 
     const twinRow = graph.entries.find((row) => row.key === "tools:twin");
     expect(twinRow?.related.some((r) => r.key === "guides:guide")).toBe(true);
-  });
-
-  it("makes two entries that share only a packageUrl into related candidates", () => {
-    // Category overlap alone tops out at 16 (< 18 threshold), so before
-    // packageUrl was added to sourceUrls() these two never became candidates
-    // and scored null; the shared source URL now contributes 70 points.
-    const left = entry({
-      slug: "left",
-      title: "Left",
-      packageUrl: "https://pkg.example.com/thing",
-    });
-    const right = entry({
-      slug: "right",
-      title: "Right",
-      packageUrl: "https://pkg.example.com/thing",
-    });
-
-    const graph = buildRegistryRelationGraph([left, right]);
-    const leftRow = graph.entries.find((row) => row.key === "skills:left");
-    const match = leftRow?.related.find((r) => r.key === "skills:right");
-    expect(match).toBeDefined();
-    expect(match?.reasons).toContain("shared_source_url");
   });
 
   it("returns an empty entries list for an empty registry", () => {

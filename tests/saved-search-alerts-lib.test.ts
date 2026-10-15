@@ -5,8 +5,6 @@ import {
   activeInAppSavedSearches,
   savedSearchQueryMatchesEntry,
   savedSearchMatchesEntry,
-  removedEntryFromEvent,
-  removalEventSupportsSearchFilters,
   buildSavedSearchAlerts,
   type SavedSearchAlertEntry,
   type SavedSearchAlertSearch,
@@ -24,7 +22,6 @@ const entry: SavedSearchAlertEntry = {
   platforms: ["claude-code", "claude-desktop"],
   trust: "trusted",
   source: "source-backed",
-  signal: "reviewed",
 };
 
 function search(
@@ -92,19 +89,6 @@ describe("savedSearchQueryMatchesEntry", () => {
     expect(savedSearchQueryMatchesEntry(entry, undefined)).toBe(true);
     expect(savedSearchQueryMatchesEntry(entry, ",,,")).toBe(false);
     expect(savedSearchQueryMatchesEntry(entry, "mcp")).toBe(true);
-  });
-
-  it("matches on submittedBy so alerts mirror the live /browse haystack", () => {
-    // `normalizedSearchText` in data/search.ts includes `submittedBy`, so a
-    // saved search that matches only via the submitter must fire alerts too.
-    const submitted: SavedSearchAlertEntry = {
-      category: "mcp",
-      slug: "acme-server",
-      title: "Unrelated Title",
-      submittedBy: "acme-corp",
-    };
-    expect(savedSearchQueryMatchesEntry(submitted, "acme-corp")).toBe(true);
-    expect(savedSearchQueryMatchesEntry(submitted, "other-corp")).toBe(false);
   });
 
   it("uses the shared alias map for saved-search query expansion", () => {
@@ -197,7 +181,7 @@ describe("savedSearchQueryMatchesEntry", () => {
 });
 
 describe("savedSearchMatchesEntry", () => {
-  it("honors category, platform, trust, source, and signal filters", () => {
+  it("honors category, platform, trust, and source filters", () => {
     expect(
       savedSearchMatchesEntry(
         search({ category: "mcp", platform: "claude-code" }),
@@ -216,12 +200,6 @@ describe("savedSearchMatchesEntry", () => {
     expect(savedSearchMatchesEntry(search({ source: "external" }), entry)).toBe(
       false,
     );
-    expect(savedSearchMatchesEntry(search({ signal: "reviewed" }), entry)).toBe(
-      true,
-    );
-    expect(
-      savedSearchMatchesEntry(search({ signal: "safety-notes" }), entry),
-    ).toBe(false);
   });
 
   it("passes when optional filters are unset", () => {
@@ -232,7 +210,6 @@ describe("savedSearchMatchesEntry", () => {
           platform: undefined,
           trust: undefined,
           source: undefined,
-          signal: undefined,
           q: "postgres",
         }),
         entry,
@@ -269,88 +246,6 @@ describe("savedSearchMatchesEntry", () => {
       false,
     );
     expect(savedSearchMatchesEntry(search({ q: undefined }), entry)).toBe(true);
-  });
-});
-
-describe("removedEntryFromEvent / removalEventSupportsSearchFilters", () => {
-  it("copies optional trust/source/platforms when the event carries them", () => {
-    expect(
-      removedEntryFromEvent({
-        category: "mcp",
-        slug: "x",
-        title: "X",
-        trust: "trusted",
-        source: "source-backed",
-        signal: "reviewed",
-        platforms: ["claude-code", ""],
-      }),
-    ).toEqual({
-      category: "mcp",
-      slug: "x",
-      title: "X",
-      trust: "trusted",
-      source: "source-backed",
-      signal: "reviewed",
-      platforms: ["claude-code"],
-    });
-  });
-
-  it("omits blank optional fields so filter availability stays honest", () => {
-    expect(
-      removedEntryFromEvent({
-        category: "mcp",
-        slug: "x",
-        title: "X",
-        trust: "  ",
-        source: "",
-        platforms: [],
-      }),
-    ).toEqual({ category: "mcp", slug: "x", title: "X" });
-  });
-
-  it("reports whether a synthetic removal can satisfy search filters", () => {
-    const bare = removedEntryFromEvent({
-      category: "mcp",
-      slug: "x",
-      title: "X",
-    });
-    const enriched = removedEntryFromEvent({
-      category: "mcp",
-      slug: "x",
-      title: "X",
-      trust: "trusted",
-      source: "source-backed",
-      signal: "reviewed",
-      platforms: ["claude-code"],
-    });
-    expect(removalEventSupportsSearchFilters(search(), bare)).toBe(true);
-    expect(
-      removalEventSupportsSearchFilters(search({ trust: "trusted" }), bare),
-    ).toBe(false);
-    expect(
-      removalEventSupportsSearchFilters(search({ trust: "trusted" }), enriched),
-    ).toBe(true);
-    expect(
-      removalEventSupportsSearchFilters(search({ signal: "reviewed" }), bare),
-    ).toBe(false);
-    expect(
-      removalEventSupportsSearchFilters(
-        search({ signal: "reviewed" }),
-        enriched,
-      ),
-    ).toBe(true);
-    expect(
-      removalEventSupportsSearchFilters(
-        search({ platform: "claude-code" }),
-        bare,
-      ),
-    ).toBe(false);
-    expect(
-      removalEventSupportsSearchFilters(
-        search({ platform: "claude-code" }),
-        enriched,
-      ),
-    ).toBe(true);
   });
 });
 
@@ -399,140 +294,6 @@ describe("buildSavedSearchAlerts", () => {
             slug: "missing",
             action: "updated",
             date: "2026-06-18T10:00:00.000Z",
-          },
-        ],
-        new Map(),
-      ),
-    ).toEqual([]);
-  });
-
-  it("still alerts on a removed event whose entry detail is already gone", () => {
-    // A removed entry's detail JSON 404s, so it's never in entriesByRef; the
-    // match must fall back to the event's own carried fields.
-    const alerts = buildSavedSearchAlerts(
-      [search()],
-      [
-        {
-          id: "evt-removed",
-          kind: "entry",
-          category: "mcp",
-          slug: "postgres-memory",
-          action: "removed",
-          date: "2026-06-19T10:00:00.000Z",
-          title: "Postgres Memory MCP",
-        },
-      ],
-      new Map(),
-    );
-    expect(alerts).toHaveLength(1);
-    expect(alerts[0]).toMatchObject({
-      severity: "warning",
-      title: "Postgres Memory MCP removed",
-      href: "/entry/mcp/postgres-memory",
-    });
-  });
-
-  it("does not alert trust/source/platform-filtered searches on path-only removals", () => {
-    // Webhook/path-classifier removal events only carry category/slug/title.
-    // Searches that filter on trust/source/platform are explicitly skipped for
-    // that synthetic fallback rather than silently failing inside the matcher.
-    const removedEvent = {
-      id: "evt-removed-filters",
-      kind: "entry",
-      category: "mcp",
-      slug: "postgres-memory",
-      action: "removed" as const,
-      date: "2026-06-19T11:00:00.000Z",
-      title: "Postgres Memory MCP",
-    };
-    expect(
-      buildSavedSearchAlerts(
-        [search({ trust: "trusted", q: "postgres" })],
-        [removedEvent],
-        new Map(),
-      ),
-    ).toEqual([]);
-    expect(
-      buildSavedSearchAlerts(
-        [search({ source: "source-backed", q: "postgres" })],
-        [removedEvent],
-        new Map(),
-      ),
-    ).toEqual([]);
-    expect(
-      buildSavedSearchAlerts(
-        [search({ platform: "claude-code", q: "postgres" })],
-        [removedEvent],
-        new Map(),
-      ),
-    ).toEqual([]);
-    // Category- and query-only searches still match on carried fields.
-    expect(
-      buildSavedSearchAlerts(
-        [search({ category: "mcp", q: "postgres" })],
-        [removedEvent],
-        new Map(),
-      ),
-    ).toHaveLength(1);
-  });
-
-  it("alerts trust/source/platform-filtered searches when the removal event carries those fields", () => {
-    const enrichedRemoval = {
-      id: "evt-removed-enriched",
-      kind: "entry",
-      category: "mcp",
-      slug: "postgres-memory",
-      action: "removed" as const,
-      date: "2026-06-19T12:00:00.000Z",
-      title: "Postgres Memory MCP",
-      trust: "trusted",
-      source: "source-backed",
-      platforms: ["claude-code", "claude-desktop"],
-    };
-    expect(
-      buildSavedSearchAlerts(
-        [search({ trust: "trusted", q: "postgres" })],
-        [enrichedRemoval],
-        new Map(),
-      ),
-    ).toHaveLength(1);
-    expect(
-      buildSavedSearchAlerts(
-        [search({ source: "source-backed", q: "postgres" })],
-        [enrichedRemoval],
-        new Map(),
-      ),
-    ).toHaveLength(1);
-    expect(
-      buildSavedSearchAlerts(
-        [search({ platform: "claude-code", q: "postgres" })],
-        [enrichedRemoval],
-        new Map(),
-      ),
-    ).toHaveLength(1);
-    // Wrong filter value still rejects.
-    expect(
-      buildSavedSearchAlerts(
-        [search({ trust: "blocked", q: "postgres" })],
-        [enrichedRemoval],
-        new Map(),
-      ),
-    ).toEqual([]);
-  });
-
-  it("does not fall back for non-removed events with a missing entry", () => {
-    // The fallback is scoped to "removed"; added/updated still need live data.
-    expect(
-      buildSavedSearchAlerts(
-        [search()],
-        [
-          {
-            kind: "entry",
-            category: "mcp",
-            slug: "postgres-memory",
-            action: "added",
-            date: "2026-06-19T10:00:00.000Z",
-            title: "Postgres Memory MCP",
           },
         ],
         new Map(),

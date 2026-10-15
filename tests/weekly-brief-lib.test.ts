@@ -98,11 +98,6 @@ describe("url and date helpers", () => {
     expect(httpUrl("")).toBe("");
   });
 
-  it("rejects http(s) urls with embedded userinfo credentials", () => {
-    expect(httpUrl("https://token@github.com/owner/repo")).toBe("");
-    expect(httpUrl("http://user:pass@127.0.0.1/docs")).toBe("");
-  });
-
   it("normalizes site bases and entry urls", () => {
     expect(siteUrlBase("https://example.com/")).toBe("https://example.com");
     expect(siteUrlBase("bad")).toBe(SITE_URL);
@@ -381,12 +376,6 @@ describe("reason builders and selection", () => {
     expect(saferInstallReasons(entry({ installCommand: "x" }))).toEqual([
       "reviewable install metadata",
     ]);
-  });
-
-  it("reads packageVerified from trustSignals as well as the top level", () => {
-    expect(
-      saferInstallReasons(entry({ trustSignals: { packageVerified: true } })),
-    ).toContain("package verified");
   });
 
   it("materializes items and selects unique entries up to a limit", () => {
@@ -774,49 +763,5 @@ describe("public wrapper re-exports", () => {
     expect(wrapper.WEEKLY_BRIEF_SCHEMA_VERSION).toBe(
       WEEKLY_BRIEF_SCHEMA_VERSION,
     );
-  });
-});
-
-describe("safety/privacy signals against the production directory index", () => {
-  // The production directory index drops the raw safetyNotes/privacyNotes
-  // arrays and keeps only the trustSignals.has* booleans, so reading the raw
-  // arrays alone reported 0 notes in every real Weekly Brief email.
-  const prodShaped = entry({
-    trustSignals: { hasSafetyNotes: true, hasPrivacyNotes: true },
-  });
-
-  it("counts notes from trustSignals when the raw arrays are absent", () => {
-    const item = itemFromEntry(prodShaped, SITE_URL);
-    expect(item.safetyNotesCount).toBeGreaterThan(0);
-    expect(item.privacyNotesCount).toBeGreaterThan(0);
-  });
-
-  it("keeps the exact count when the fuller entry shape has the arrays", () => {
-    const item = itemFromEntry(
-      entry({ safetyNotes: ["s1", "s2"], privacyNotes: ["p1"] }),
-      SITE_URL,
-    );
-    expect(item.safetyNotesCount).toBe(2);
-    expect(item.privacyNotesCount).toBe(1);
-  });
-
-  it("still reports zero when the entry has no notes at all", () => {
-    const item = itemFromEntry(entry(), SITE_URL);
-    expect(item.safetyNotesCount).toBe(0);
-    expect(item.privacyNotesCount).toBe(0);
-  });
-
-  it("surfaces note reasons for production-shaped entries", () => {
-    expect(newEntryReasons(prodShaped)).toEqual(
-      expect.arrayContaining(["has safety notes", "has privacy notes"]),
-    );
-    expect(sourceBackedReasons(prodShaped)).toEqual(
-      expect.arrayContaining(["safety notes present", "privacy notes present"]),
-    );
-  });
-
-  it("omits note reasons when the entry has no notes", () => {
-    expect(sourceBackedReasons(entry())).not.toContain("safety notes present");
-    expect(newEntryReasons(entry())).not.toContain("has safety notes");
   });
 });

@@ -10,24 +10,9 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { NewsletterInline } from "@/components/newsletter-inline";
 import { HubHighlights, HubSignalStats } from "@/components/hub-highlights";
 import { hubHighlights, hubStats, trustPosture } from "@/lib/hub-highlights";
-import { trackEvent } from "@/lib/analytics";
-import {
-  platformCategoryCategoryAnalyticsData,
-  platformCategoryCategoryAnalyticsEvent,
-  platformCategoryCategoryDestination,
-  platformCategoryNotFoundEgressAnalyticsData,
-  platformCategoryNotFoundEgressAnalyticsEvent,
-  platformCategoryNotFoundEgressDestination,
-  platformCategoryPlatformAnalyticsData,
-  platformCategoryPlatformAnalyticsEvent,
-  platformCategoryPlatformDestination,
-} from "@/lib/directory-hub-cta-events";
 import { stringifyJsonLd } from "@/lib/json-ld";
-import { breadcrumbListJsonLd } from "@/lib/breadcrumb-jsonld-lib";
-import { platformCategoryItemListJsonLd } from "@/lib/platform-category-itemlist-jsonld-lib";
 import { absoluteUrl } from "@/lib/seo";
 import { ogImageUrl } from "@/lib/og-image";
-import { ogImageMetaTags } from "@/lib/og-meta-lib";
 
 const PLATFORM_IDS = new Set(Object.keys(PLATFORM_LABEL));
 const CATEGORY_IDS = new Set(CATEGORIES.map((c) => c.id));
@@ -59,19 +44,34 @@ export const Route = createFileRoute("/for/$platform/$category")({
     const title = `Claude ${cLabel} for ${pLabel} — HeyClaude`;
     const description = `${entries.length} source-backed Claude ${cLabel} that work with ${pLabel}, curated and metadata-reviewed in HeyClaude.`;
     const ogImage = ogImageUrl({ title: `${cLabel} for ${pLabel}`, eyebrow: pLabel, description });
-    const itemList = platformCategoryItemListJsonLd(
-      pLabel,
-      cLabel,
+    const itemList = {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: `Claude ${cLabel} for ${pLabel}`,
       description,
-      entries,
-      absoluteUrl,
-    );
-    const breadcrumbs = breadcrumbListJsonLd([
-      { name: "Directory", item: absoluteUrl("/browse") },
-      { name: "Platforms", item: absoluteUrl("/for") },
-      { name: pLabel, item: absoluteUrl(`/for/${params.platform}`) },
-      { name: cLabel, item: url },
-    ]);
+      numberOfItems: entries.length,
+      itemListElement: entries.slice(0, 30).map((e, i) => ({
+        "@type": "ListItem",
+        position: i + 1,
+        name: e.title,
+        url: absoluteUrl(`/entry/${e.category}/${e.slug}`),
+      })),
+    };
+    const breadcrumbs = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Directory", item: absoluteUrl("/browse") },
+        { "@type": "ListItem", position: 2, name: "Platforms", item: absoluteUrl("/for") },
+        {
+          "@type": "ListItem",
+          position: 3,
+          name: pLabel,
+          item: absoluteUrl(`/for/${params.platform}`),
+        },
+        { "@type": "ListItem", position: 4, name: cLabel, item: url },
+      ],
+    };
     return {
       meta: [
         { title },
@@ -79,7 +79,12 @@ export const Route = createFileRoute("/for/$platform/$category")({
         { property: "og:title", content: title },
         { property: "og:description", content: description },
         { property: "og:url", content: url },
-        ...ogImageMetaTags(ogImage),
+        { property: "og:image", content: ogImage },
+        { property: "og:image:type", content: "image/png" },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: ogImage },
         // Single-entry intersections render (linked from the platform hub) but stay out of the
         // index to avoid thin pages — matches the sitemap policy below.
         ...(entries.length < 2 ? [{ name: "robots", content: "noindex, follow" }] : []),
@@ -92,31 +97,20 @@ export const Route = createFileRoute("/for/$platform/$category")({
     };
   },
   component: IntersectionPage,
-  notFoundComponent: () => {
-    const destination = platformCategoryNotFoundEgressDestination("platforms");
-    return (
-      <div className="mx-auto max-w-2xl px-6 py-24 text-center">
-        <h1 className="h-display-2 text-ink">Nothing here yet</h1>
-        <p className="mt-3 text-sm text-ink-muted">
-          No resources match that platform and category combination.
-        </p>
-        {destination ? (
-          <Link
-            to={destination.to}
-            className="mt-6 inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
-            onClick={() =>
-              trackEvent(
-                platformCategoryNotFoundEgressAnalyticsEvent(),
-                platformCategoryNotFoundEgressAnalyticsData(),
-              )
-            }
-          >
-            All platforms <ArrowRight className="h-4 w-4" />
-          </Link>
-        ) : null}
-      </div>
-    );
-  },
+  notFoundComponent: () => (
+    <div className="mx-auto max-w-2xl px-6 py-24 text-center">
+      <h1 className="h-display-2 text-ink">Nothing here yet</h1>
+      <p className="mt-3 text-sm text-ink-muted">
+        No resources match that platform and category combination.
+      </p>
+      <Link
+        to="/for"
+        className="mt-6 inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
+      >
+        All platforms <ArrowRight className="h-4 w-4" />
+      </Link>
+    </div>
+  ),
 });
 
 function IntersectionPage() {
@@ -159,47 +153,19 @@ function IntersectionPage() {
           {newest ? <> Most recent addition: {newest.title}.</> : null}
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-2 text-sm">
-          {(() => {
-            const destination = platformCategoryPlatformDestination(platform);
-            if (!destination) return null;
-            return (
-              <Link
-                to={destination.to}
-                params={destination.params}
-                onClick={() =>
-                  trackEvent(
-                    platformCategoryPlatformAnalyticsEvent(),
-                    platformCategoryPlatformAnalyticsData(platform, category, entries.length),
-                  )
-                }
-                className="story-link font-medium text-ink"
-              >
-                All {pLabel} resources →
-              </Link>
-            );
-          })()}
+          <Link
+            to="/for/$platform"
+            params={{ platform }}
+            className="story-link font-medium text-ink"
+          >
+            All {pLabel} resources →
+          </Link>
           <span aria-hidden className="text-ink-subtle">
             ·
           </span>
-          {(() => {
-            const destination = platformCategoryCategoryDestination(category);
-            if (!destination) return null;
-            return (
-              <Link
-                to={destination.to}
-                params={destination.params}
-                onClick={() =>
-                  trackEvent(
-                    platformCategoryCategoryAnalyticsEvent(),
-                    platformCategoryCategoryAnalyticsData(platform, category, entries.length),
-                  )
-                }
-                className="story-link font-medium text-ink"
-              >
-                All Claude {cLabel} →
-              </Link>
-            );
-          })()}
+          <Link to="/$category" params={{ category }} className="story-link font-medium text-ink">
+            All Claude {cLabel} →
+          </Link>
         </div>
       </header>
 
@@ -213,21 +179,11 @@ function IntersectionPage() {
       </h2>
       <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {entries.map((e) => (
-          <ResourceCard
-            key={`${e.category}/${e.slug}`}
-            entry={e}
-            variant="grid"
-            analyticsSurface="platform-category"
-          />
+          <ResourceCard key={`${e.category}/${e.slug}`} entry={e} variant="grid" />
         ))}
       </div>
 
-      <HubSignalStats
-        stats={stats}
-        total={entries.length}
-        surface="platform-category"
-        browseBase={{ platform, category }}
-      />
+      <HubSignalStats stats={stats} total={entries.length} />
 
       <NewsletterInline
         variant="quiet"

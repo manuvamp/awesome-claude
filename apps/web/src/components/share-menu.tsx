@@ -9,13 +9,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { trackEvent } from "@/lib/analytics";
-import {
-  entryDetailShareAnalyticsData,
-  entryDetailShareAnalyticsEvent,
-  type EntryDetailShareAction,
-} from "@/lib/entry-detail-share-cta-events";
-import { absoluteShareUrl } from "@/lib/share-url-lib";
 
 export interface ShareMenuProps {
   /** Absolute or root-relative URL of the entry page. */
@@ -28,10 +21,12 @@ export interface ShareMenuProps {
   ogUrl?: string;
   /** Optional raycast deeplink (e.g. raycast://extensions/...). */
   raycastUrl?: string;
-  /** When set, emits detail share analytics for dropdown actions. */
-  analyticsEntry?: { category: string; slug: string };
-  /** Optional caller-owned share analytics (e.g. trending page share). */
-  onShareAction?: (action: EntryDetailShareAction) => void;
+}
+
+function abs(url: string) {
+  if (typeof window === "undefined") return url;
+  if (/^https?:\/\//.test(url)) return url;
+  return `${window.location.origin}${url}`;
 }
 
 async function copy(value: string, label: string) {
@@ -43,38 +38,13 @@ async function copy(value: string, label: string) {
   }
 }
 
-export function ShareMenu({
-  url,
-  title,
-  description,
-  llmsUrl,
-  ogUrl,
-  raycastUrl,
-  analyticsEntry,
-  onShareAction,
-}: ShareMenuProps) {
-  const absolute = absoluteShareUrl(
-    url,
-    typeof window === "undefined" ? "" : window.location.origin,
-  );
+export function ShareMenu({ url, title, description, llmsUrl, ogUrl, raycastUrl }: ShareMenuProps) {
+  const absolute = abs(url);
   const citation = description
     ? `[${title}](${absolute}) — ${description}`
     : `[${title}](${absolute})`;
 
-  const trackShare = React.useCallback(
-    (action: EntryDetailShareAction) => {
-      onShareAction?.(action);
-      if (!analyticsEntry) return;
-      trackEvent(
-        entryDetailShareAnalyticsEvent(),
-        entryDetailShareAnalyticsData(analyticsEntry.category, analyticsEntry.slug, action),
-      );
-    },
-    [analyticsEntry, onShareAction],
-  );
-
   const onNativeShare = async () => {
-    trackShare("system-share");
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({ title, text: description, url: absolute });
@@ -101,32 +71,17 @@ export function ShareMenu({
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel className="text-xs">Share this resource</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={() => {
-            trackShare("copy-link");
-            void copy(absolute, "Link copied");
-          }}
-        >
+        <DropdownMenuItem onSelect={() => copy(absolute, "Link copied")}>
           <Link2 className="mr-2 h-3.5 w-3.5" />
           Copy link
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={() => {
-            trackShare("copy-markdown");
-            void copy(citation, "Markdown citation copied");
-          }}
-        >
+        <DropdownMenuItem onSelect={() => copy(citation, "Markdown citation copied")}>
           <FileText className="mr-2 h-3.5 w-3.5" />
           Copy as markdown
         </DropdownMenuItem>
         {llmsUrl && (
           <DropdownMenuItem asChild>
-            <a
-              href={llmsUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => trackShare("open-llms")}
-            >
+            <a href={llmsUrl} target="_blank" rel="noreferrer">
               <Code2 className="mr-2 h-3.5 w-3.5" />
               Open llms.txt
             </a>
@@ -134,7 +89,7 @@ export function ShareMenu({
         )}
         {ogUrl && (
           <DropdownMenuItem asChild>
-            <a href={ogUrl} target="_blank" rel="noreferrer" onClick={() => trackShare("view-og")}>
+            <a href={ogUrl} target="_blank" rel="noreferrer">
               <ImageIcon className="mr-2 h-3.5 w-3.5" />
               View share image
             </a>
@@ -142,7 +97,7 @@ export function ShareMenu({
         )}
         {raycastUrl && (
           <DropdownMenuItem asChild>
-            <a href={raycastUrl} onClick={() => trackShare("open-raycast")}>
+            <a href={raycastUrl}>
               <Share2 className="mr-2 h-3.5 w-3.5" />
               Open in Raycast
             </a>

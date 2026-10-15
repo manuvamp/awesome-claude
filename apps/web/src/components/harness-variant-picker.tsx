@@ -6,7 +6,6 @@ interface Props {
   available: Harness[];
   value: Harness | null;
   onChange: (h: Harness) => void;
-  onVariantSelect?: (h: Harness) => void;
   className?: string;
   labelId?: string;
 }
@@ -15,21 +14,9 @@ interface Props {
  * Small radiogroup that scopes install/config/full payloads to a specific
  * harness. Renders nothing when fewer than 2 variants exist.
  */
-export function HarnessVariantPicker({
-  available,
-  value,
-  onChange,
-  onVariantSelect,
-  className,
-  labelId,
-}: Props) {
+export function HarnessVariantPicker({ available, value, onChange, className, labelId }: Props) {
   if (!available || available.length < 2) return null;
   const ordered = HARNESSES.map((h) => h.id).filter((id) => available.includes(id));
-  const selectHarness = (id: Harness) => {
-    if (id === value) return;
-    onChange(id);
-    onVariantSelect?.(id);
-  };
   return (
     <div
       role="radiogroup"
@@ -46,16 +33,16 @@ export function HarnessVariantPicker({
             role="radio"
             aria-checked={active}
             tabIndex={active ? 0 : -1}
-            onClick={() => selectHarness(id)}
+            onClick={() => onChange(id)}
             onKeyDown={(e) => {
               if (e.key === "ArrowRight" || e.key === "ArrowDown") {
                 e.preventDefault();
                 const idx = ordered.indexOf(value ?? ordered[0]!);
-                selectHarness(ordered[(idx + 1) % ordered.length]!);
+                onChange(ordered[(idx + 1) % ordered.length]!);
               } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
                 e.preventDefault();
                 const idx = ordered.indexOf(value ?? ordered[0]!);
-                selectHarness(ordered[(idx - 1 + ordered.length) % ordered.length]!);
+                onChange(ordered[(idx - 1 + ordered.length) % ordered.length]!);
               }
             }}
             className={cn(

@@ -1,45 +1,13 @@
-import { createFileRoute, Link, stripSearchParams } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageContainer } from "@/components/page-container";
 import { absoluteUrl } from "@/lib/seo";
-import { breadcrumbScript, itemListScript } from "@/lib/seo-jsonld";
 import { createServerFn } from "@tanstack/react-start";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { z } from "zod";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Search, Sparkles, X } from "lucide-react";
 import type { JobListing, JobTier } from "@/types/registry";
-import { normalizeJobListing } from "@/lib/job-listing-lib";
-import { safeErrorMessage } from "@/lib/safe-error-message-lib";
 import { cn } from "@/lib/utils";
 import { JobCard } from "@/components/job-card";
-import {
-  compensationSortValue,
-  isFresh,
-  pickDailySpotlight,
-  relativePosted,
-  sortJobs,
-} from "@/lib/jobs-utils";
-import { jobsEmptyStateSuggestions } from "@/lib/jobs-empty-state-lib";
-import { trackEvent } from "@/lib/analytics";
-import {
-  jobsErrorRetryAnalyticsData,
-  jobsErrorRetryAnalyticsEvent,
-  jobsIndexFilterClearAnalyticsData,
-  jobsIndexFilterClearAnalyticsEvent,
-  jobsIndexFilterSelectAnalyticsData,
-  jobsIndexFilterSelectAnalyticsEvent,
-  jobsIndexJobAnalyticsData,
-  jobsIndexJobAnalyticsEvent,
-  jobsIndexPostAnalyticsData,
-  jobsIndexPostAnalyticsEvent,
-  jobsIndexSortSelectAnalyticsData,
-  jobsIndexSortSelectAnalyticsEvent,
-  jobsIndexStatAnalyticsData,
-  jobsIndexStatAnalyticsEvent,
-  jobsIndexStatFilterPatch,
-  jobsIndexPostDestination,
-  type JobsIndexFilterAxis,
-  type JobsIndexStatId,
-} from "@/lib/jobs-hub-cta-events";
+import { isFresh, pickDailySpotlight, relativePosted, sortJobs } from "@/lib/jobs-utils";
 import { NewsletterInline } from "@/components/newsletter-inline";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 
@@ -48,54 +16,13 @@ const loadPublicJobs = createServerFn({ method: "GET" }).handler(async () => {
   return buildPublicJobsIndex(await getJobs()).entries;
 });
 
-type RemoteFilter = "all" | "remote" | "onsite";
-type SortMode = "default" | "newest" | "salary";
-
-const defaultSearch = {
-  q: "",
-  tier: "all" as const,
-  remote: "all" as const,
-  type: "all",
-  freshOnly: false,
-  featuredOnly: false,
-  sortMode: "default" as const,
-};
-
-const searchBool = z
-  .union([z.boolean(), z.literal("true"), z.literal("false"), z.literal("1"), z.literal("0")])
-  .transform((value) => value === true || value === "true" || value === "1")
-  .catch(false);
-
-const jobsSearchSchema = z.object({
-  q: z.string().catch(defaultSearch.q).default(defaultSearch.q),
-  tier: z
-    .enum(["all", "featured", "sponsored", "standard", "free"])
-    .catch(defaultSearch.tier)
-    .default(defaultSearch.tier),
-  remote: z
-    .enum(["all", "remote", "onsite"])
-    .catch(defaultSearch.remote)
-    .default(defaultSearch.remote),
-  type: z.string().catch(defaultSearch.type).default(defaultSearch.type),
-  freshOnly: searchBool.default(defaultSearch.freshOnly),
-  featuredOnly: searchBool.default(defaultSearch.featuredOnly),
-  sortMode: z
-    .enum(["default", "newest", "salary"])
-    .catch(defaultSearch.sortMode)
-    .default(defaultSearch.sortMode),
-});
-
 export const Route = createFileRoute("/jobs/")({
-  validateSearch: jobsSearchSchema,
-  search: {
-    middlewares: [stripSearchParams(defaultSearch)],
-  },
   loader: async () => {
     return {
       jobs: (await loadPublicJobs()).map(normalizeJobListing).filter((job) => job.slug),
     };
   },
-  head: ({ loaderData }) => ({
+  head: () => ({
     meta: [
       { title: "Claude & AI workflow jobs — HeyClaude" },
       {
@@ -110,36 +37,12 @@ export const Route = createFileRoute("/jobs/")({
       { property: "og:url", content: absoluteUrl("/jobs") },
     ],
     links: [{ rel: "canonical", href: absoluteUrl("/jobs") }],
-    scripts: [
-      breadcrumbScript([
-        { name: "Directory", path: "/browse" },
-        { name: "Jobs", path: "/jobs" },
-      ]),
-      itemListScript(
-        (loaderData?.jobs ?? []).map((job) => ({
-          name: `${job.title} at ${job.company}`,
-          path: `/jobs/${job.slug}`,
-        })),
-        { name: "Claude & AI workflow jobs" },
-      ),
-    ],
   }),
   errorComponent: ({ error, reset }: ErrorComponentProps) => (
     <div className="mx-auto max-w-xl px-4 py-16 text-center">
       <h1 className="font-display text-2xl text-ink">Couldn't load jobs</h1>
-      <p className="mt-2 text-sm text-ink-muted">
-        {safeErrorMessage(
-          error.message,
-          "We couldn't load the job board right now. Please try again.",
-        )}
-      </p>
-      <button
-        onClick={() => {
-          trackEvent(jobsErrorRetryAnalyticsEvent(), jobsErrorRetryAnalyticsData("jobs-index"));
-          reset();
-        }}
-        className="mt-4 rounded-md border border-border px-4 py-2 text-sm"
-      >
+      <p className="mt-2 text-sm text-ink-muted">{error.message}</p>
+      <button onClick={reset} className="mt-4 rounded-md border border-border px-4 py-2 text-sm">
         Try again
       </button>
     </div>
@@ -147,83 +50,53 @@ export const Route = createFileRoute("/jobs/")({
   component: JobsPage,
 });
 
-type JobsFilterState = {
-  q: string;
-  tier: JobTier | "all";
-  remote: RemoteFilter;
-  type: string;
-  freshOnly: boolean;
-  featuredOnly: boolean;
-};
+type RemoteFilter = "all" | "remote" | "onsite";
+type SortMode = "default" | "newest" | "salary";
 
-function countJobsForFilters(jobs: JobListing[], slice: Partial<JobsFilterState>) {
-  const q = slice.q ?? "";
-  const tier = slice.tier ?? "all";
-  const remote = slice.remote ?? "all";
-  const type = slice.type ?? "all";
-  const freshOnly = slice.freshOnly ?? false;
-  const featuredOnly = slice.featuredOnly ?? false;
-
-  return jobs.filter((j) => {
-    if (tier !== "all" && j.tier !== tier) return false;
-    if (remote === "remote" && !j.isRemote) return false;
-    if (remote === "onsite" && j.isRemote) return false;
-    if (type !== "all" && j.type !== type) return false;
-    if (freshOnly && !isFresh(j.postedAt)) return false;
-    if (featuredOnly && j.tier !== "featured" && j.tier !== "sponsored") return false;
-    if (!q) return true;
-    const blob = [j.title, j.company, j.location, j.description, j.type, j.labels?.join(" ")]
-      .join(" ")
-      .toLowerCase();
-    return blob.includes(q.toLowerCase());
-  }).length;
-}
-
-function activeJobsFilterCount(filters: JobsFilterState): number {
-  let count = 0;
-  if (filters.q) count++;
-  if (filters.tier !== "all") count++;
-  if (filters.remote !== "all") count++;
-  if (filters.type !== "all") count++;
-  if (filters.freshOnly) count++;
-  if (filters.featuredOnly) count++;
-  return count;
+function normalizeJobListing(value: Partial<JobListing> & Record<string, unknown>): JobListing {
+  const postedAt = String(value.postedAt || value.lastVerifiedAt || new Date(0).toISOString());
+  return {
+    slug: String(value.slug || ""),
+    title: String(value.title || "Untitled role"),
+    company: String(value.company || "Unknown company"),
+    companyUrl: typeof value.companyUrl === "string" ? value.companyUrl : undefined,
+    location: String(value.location || "Remote"),
+    isRemote: Boolean(value.isRemote),
+    isWorldwide: Boolean(value.isWorldwide),
+    type: String(value.type || "Role"),
+    postedAt,
+    lastVerifiedAt: typeof value.lastVerifiedAt === "string" ? value.lastVerifiedAt : undefined,
+    compensation: typeof value.compensation === "string" ? value.compensation : undefined,
+    equity: typeof value.equity === "string" ? value.equity : undefined,
+    bonus: typeof value.bonus === "string" ? value.bonus : undefined,
+    description: String(value.description || ""),
+    benefits: Array.isArray(value.benefits) ? value.benefits.map(String) : undefined,
+    responsibilities: Array.isArray(value.responsibilities)
+      ? value.responsibilities.map(String)
+      : undefined,
+    requirements: Array.isArray(value.requirements) ? value.requirements.map(String) : undefined,
+    labels: Array.isArray(value.labels) ? value.labels.map(String) : undefined,
+    applyUrl: typeof value.applyUrl === "string" ? value.applyUrl : undefined,
+    tier: (value.tier as JobTier) || "free",
+    sourceKind: value.sourceKind as JobListing["sourceKind"],
+    sourceUrl: typeof value.sourceUrl === "string" ? value.sourceUrl : undefined,
+    curationNote: typeof value.curationNote === "string" ? value.curationNote : undefined,
+    featured: Boolean(value.featured),
+    sponsored: Boolean(value.sponsored),
+  };
 }
 
 function JobsPage() {
   const loaderData = Route.useLoaderData();
-  const sp = Route.useSearch();
-  const navigate = Route.useNavigate();
   const [jobs, setJobs] = useState<JobListing[]>(loaderData.jobs);
   const [loadingJobs, setLoadingJobs] = useState(loaderData.jobs.length === 0);
-  // Debounce free-text query: local state drives the input; URL updates 250ms after idle (#5711).
-  const [qInput, setQInput] = useState(sp.q);
-  useEffect(() => {
-    setQInput(sp.q);
-  }, [sp.q]);
-  useEffect(() => {
-    if (qInput === sp.q) return;
-    const t = window.setTimeout(() => {
-      navigate({ search: (prev: typeof sp) => ({ ...prev, q: qInput }), replace: true });
-    }, 250);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qInput]);
-
-  const q = sp.q;
-  const tier = sp.tier;
-  const remote = sp.remote;
-  const type = sp.type;
-  const freshOnly = sp.freshOnly;
-  const featuredOnly = sp.featuredOnly;
-  const sortMode = sp.sortMode;
-
-  const setFilters = useCallback(
-    (patch: Partial<typeof sp>) => {
-      navigate({ search: (prev: typeof sp) => ({ ...prev, ...patch }) });
-    },
-    [navigate],
-  );
+  const [q, setQ] = useState("");
+  const [tier, setTier] = useState<JobTier | "all">("all");
+  const [remote, setRemote] = useState<RemoteFilter>("all");
+  const [type, setType] = useState<string>("all");
+  const [freshOnly, setFreshOnly] = useState(false);
+  const [featuredOnly, setFeaturedOnly] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>("default");
 
   useEffect(() => {
     let cancelled = false;
@@ -273,9 +146,12 @@ function JobsPage() {
       return [...filtered].sort((a, b) => b.postedAt.localeCompare(a.postedAt));
     }
     if (sortMode === "salary") {
-      return [...filtered].sort(
-        (a, b) => compensationSortValue(b.compensation) - compensationSortValue(a.compensation),
-      );
+      const sval = (j: JobListing) => {
+        if (!j.compensation) return -1;
+        const m = j.compensation.match(/\$?(\d[\d,]*)k?/i);
+        return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+      };
+      return [...filtered].sort((a, b) => sval(b) - sval(a));
     }
     return sortJobs(filtered);
   }, [filtered, sortMode]);
@@ -301,157 +177,6 @@ function JobsPage() {
   const hasFilters =
     q || tier !== "all" || remote !== "all" || type !== "all" || freshOnly || featuredOnly;
 
-  const filterState = useMemo(
-    () => ({ q, tier, remote, type, freshOnly, featuredOnly }),
-    [q, tier, remote, type, freshOnly, featuredOnly],
-  );
-
-  const countForFilters = useCallback(
-    (slice: Partial<JobsFilterState>) => countJobsForFilters(jobs, { ...filterState, ...slice }),
-    [filterState, jobs],
-  );
-
-  // Per-filter "relax this to see N roles" suggestions for the zero-result state.
-  // RESET values from the lib are all valid filter values, so the cast is safe.
-  const emptySuggestions = useMemo(
-    () =>
-      hasFilters
-        ? jobsEmptyStateSuggestions(filterState, (slice) =>
-            countForFilters(slice as Partial<JobsFilterState>),
-          )
-        : [],
-    [hasFilters, filterState, countForFilters],
-  );
-
-  const applyFilterPatch = useCallback(
-    (patch: Partial<JobsFilterState>) => {
-      setFilters(patch);
-    },
-    [setFilters],
-  );
-
-  const onFilterSelect = useCallback(
-    (
-      axis: JobsIndexFilterAxis,
-      value: string,
-      active: boolean,
-      slice: Partial<JobsFilterState>,
-    ) => {
-      trackEvent(
-        jobsIndexFilterSelectAnalyticsEvent(),
-        jobsIndexFilterSelectAnalyticsData(
-          axis,
-          value,
-          active,
-          countForFilters(slice),
-          jobs.length,
-        ),
-      );
-    },
-    [countForFilters, jobs.length],
-  );
-
-  const onTierFilter = useCallback(
-    (value: string) => {
-      const next = value as JobTier | "all";
-      if (next === tier) return;
-      onFilterSelect("tier", next, next !== "all", { tier: next });
-      setFilters({ tier: next });
-    },
-    [onFilterSelect, setFilters, tier],
-  );
-
-  const onRemoteFilter = useCallback(
-    (value: string) => {
-      const next = value as RemoteFilter;
-      if (next === remote) return;
-      onFilterSelect("remote", next, next !== "all", { remote: next });
-      setFilters({ remote: next });
-    },
-    [onFilterSelect, remote, setFilters],
-  );
-
-  const onTypeFilter = useCallback(
-    (value: string) => {
-      if (value === type) return;
-      onFilterSelect("type", value, value !== "all", { type: value });
-      setFilters({ type: value });
-    },
-    [onFilterSelect, setFilters, type],
-  );
-
-  const onFreshToggle = useCallback(() => {
-    const next = !freshOnly;
-    onFilterSelect("fresh", next ? "on" : "off", next, { freshOnly: next });
-    setFilters({ freshOnly: next });
-  }, [freshOnly, onFilterSelect, setFilters]);
-
-  const onFeaturedToggle = useCallback(() => {
-    const next = !featuredOnly;
-    onFilterSelect("featured", next ? "on" : "off", next, { featuredOnly: next });
-    setFilters({ featuredOnly: next });
-  }, [featuredOnly, onFilterSelect, setFilters]);
-
-  const onSortSelect = useCallback(
-    (value: SortMode) => {
-      if (value === sortMode) return;
-      trackEvent(
-        jobsIndexSortSelectAnalyticsEvent(),
-        jobsIndexSortSelectAnalyticsData(value, filtered.length, jobs.length),
-      );
-      setFilters({ sortMode: value });
-    },
-    [filtered.length, jobs.length, setFilters, sortMode],
-  );
-
-  const onClearFilters = useCallback(() => {
-    trackEvent(
-      jobsIndexFilterClearAnalyticsEvent(),
-      jobsIndexFilterClearAnalyticsData(
-        activeJobsFilterCount(filterState),
-        jobs.length,
-        jobs.length,
-      ),
-    );
-    setFilters({
-      q: "",
-      tier: "all",
-      remote: "all",
-      type: "all",
-      freshOnly: false,
-      featuredOnly: false,
-    });
-    setQInput("");
-  }, [filterState, jobs.length, setFilters]);
-
-  const onStatClick = useCallback(
-    (statId: JobsIndexStatId, count: number) => {
-      const patch = jobsIndexStatFilterPatch(statId);
-      if (!patch) return;
-      trackEvent(
-        jobsIndexStatAnalyticsEvent(),
-        jobsIndexStatAnalyticsData(statId, count, jobs.length),
-      );
-      setFilters({
-        ...(patch.q !== undefined ? { q: patch.q } : {}),
-        ...(patch.tier !== undefined ? { tier: patch.tier as JobTier | "all" } : {}),
-        ...(patch.remote !== undefined ? { remote: patch.remote as RemoteFilter } : {}),
-        ...(patch.type !== undefined ? { type: patch.type } : {}),
-        ...(patch.freshOnly !== undefined ? { freshOnly: patch.freshOnly } : {}),
-        ...(patch.featuredOnly !== undefined ? { featuredOnly: patch.featuredOnly } : {}),
-      });
-      if (patch.q !== undefined) setQInput(patch.q);
-    },
-    [jobs.length, setFilters],
-  );
-
-  const headlineStats: Array<{ id: JobsIndexStatId; label: string; count: number }> = [
-    { id: "total", label: "Open roles", count: counts.total },
-    { id: "remote", label: "Remote", count: counts.remote },
-    { id: "fresh", label: "This week", count: counts.fresh },
-    { id: "featured", label: "Featured", count: counts.featured },
-  ];
-
   return (
     <PageContainer>
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -460,43 +185,18 @@ function JobsPage() {
           <h1 className="mt-2 h-display-1 text-ink text-balance">Roles building with Claude.</h1>
           <p className="mt-2 max-w-2xl text-ink-muted">
             Source-verified jobs from teams shipping agent workflows, MCP servers, and Claude Code
-            platforms. Click a headline stat to focus the board.
+            platforms.
+            <span className="ml-1 text-ink-subtle">
+              {counts.total} open · {counts.remote} remote · {counts.fresh} this week.
+            </span>
           </p>
         </div>
-        {(() => {
-          const destination = jobsIndexPostDestination("post");
-          if (!destination) return null;
-          return (
-            <Link
-              to={destination.to}
-              onClick={() =>
-                trackEvent(
-                  jobsIndexPostAnalyticsEvent(),
-                  jobsIndexPostAnalyticsData(jobs.length, "header"),
-                )
-              }
-              className="inline-flex h-10 items-center gap-1.5 rounded-md bg-ink px-4 text-sm font-medium text-background hover:bg-ink/90"
-            >
-              Post a role <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          );
-        })()}
-      </div>
-
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {headlineStats.map((stat) => (
-          <button
-            key={stat.id}
-            type="button"
-            onClick={() => onStatClick(stat.id, stat.count)}
-            className="rounded-xl border border-border bg-surface p-4 text-left transition-colors duration-200 ease-out hover:border-border-strong hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-          >
-            <div className="text-xs uppercase tracking-wider text-ink-subtle">{stat.label}</div>
-            <div className="mt-2 font-display text-2xl font-semibold tabular-nums text-ink">
-              {stat.count}
-            </div>
-          </button>
-        ))}
+        <Link
+          to="/jobs/post"
+          className="inline-flex h-10 items-center gap-1.5 rounded-md bg-ink px-4 text-sm font-medium text-background hover:bg-ink/90"
+        >
+          Post a role <ArrowUpRight className="h-4 w-4" />
+        </Link>
       </div>
 
       {/* Sticky filter bar */}
@@ -505,8 +205,8 @@ function JobsPage() {
           <div className="relative min-w-[200px] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
             <input
-              value={qInput}
-              onChange={(e) => setQInput(e.target.value)}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
               placeholder="Search title, company, stack…"
               aria-label="Search jobs by title, company, or stack"
               className="h-9 w-full rounded-md border border-border bg-background pl-8 pr-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/40"
@@ -520,7 +220,7 @@ function JobsPage() {
               { id: "free", label: `Community · ${counts.byTier.free}` },
             ]}
             value={tier}
-            onChange={onTierFilter}
+            onChange={(v) => setTier(v as JobTier | "all")}
           />
           <Segmented
             options={[
@@ -529,11 +229,11 @@ function JobsPage() {
               { id: "onsite", label: "Onsite" },
             ]}
             value={remote}
-            onChange={onRemoteFilter}
+            onChange={(v) => setRemote(v as RemoteFilter)}
           />
           <select
             value={type}
-            onChange={(e) => onTypeFilter(e.target.value)}
+            onChange={(e) => setType(e.target.value)}
             aria-label="Filter by job type"
             className="h-9 rounded-md border border-border bg-background px-2 text-xs text-ink-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
           >
@@ -546,8 +246,7 @@ function JobsPage() {
           </select>
           <button
             type="button"
-            onClick={onFreshToggle}
-            aria-pressed={freshOnly}
+            onClick={() => setFreshOnly((v) => !v)}
             className={cn(
               "h-9 rounded-md border px-2.5 text-xs font-medium transition-colors duration-200 ease-out",
               freshOnly
@@ -559,8 +258,7 @@ function JobsPage() {
           </button>
           <button
             type="button"
-            onClick={onFeaturedToggle}
-            aria-pressed={featuredOnly}
+            onClick={() => setFeaturedOnly((v) => !v)}
             className={cn(
               "h-9 rounded-md border px-2.5 text-xs font-medium transition-colors duration-200 ease-out",
               featuredOnly
@@ -574,7 +272,7 @@ function JobsPage() {
             <span className="text-[10px] uppercase tracking-wider text-ink-subtle">Sort</span>
             <select
               value={sortMode}
-              onChange={(e) => onSortSelect(e.target.value as SortMode)}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
               className="h-9 rounded-md border border-border bg-background px-2 text-xs text-ink-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
             >
               <option value="default">Featured first</option>
@@ -585,7 +283,14 @@ function JobsPage() {
           {hasFilters && (
             <button
               type="button"
-              onClick={onClearFilters}
+              onClick={() => {
+                setQ("");
+                setTier("all");
+                setRemote("all");
+                setType("all");
+                setFreshOnly(false);
+                setFeaturedOnly(false);
+              }}
               className="inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs text-ink-muted hover:text-ink"
             >
               <X className="h-3 w-3" /> Clear
@@ -604,51 +309,14 @@ function JobsPage() {
             </span>
           </div>
           <div className="space-y-2.5">
-            {sorted.map((j, rowIndex) => (
-              <JobCard
-                key={j.slug}
-                job={j}
-                onNavigate={() =>
-                  trackEvent(
-                    jobsIndexJobAnalyticsEvent(),
-                    jobsIndexJobAnalyticsData(j.slug, j.tier, rowIndex, sorted.length, "row"),
-                  )
-                }
-              />
+            {sorted.map((j) => (
+              <JobCard key={j.slug} job={j} />
             ))}
-            {sorted.length === 0 &&
-              (loadingJobs ? (
-                <div className="rounded-xl border border-dashed border-border bg-surface px-5 py-12 text-center text-sm text-ink-muted">
-                  Loading active roles...
-                </div>
-              ) : hasFilters ? (
-                <div className="space-y-3 rounded-xl border border-dashed border-border bg-surface px-5 py-12 text-center text-sm text-ink-muted">
-                  <p>No roles match these filters.</p>
-                  {emptySuggestions.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      {emptySuggestions.map((s) => (
-                        <button
-                          key={s.axis}
-                          onClick={() => applyFilterPatch(s.patch as Partial<JobsFilterState>)}
-                          className="rounded-full border border-border px-3 py-1 text-xs text-ink transition hover:border-ink-subtle"
-                        >
-                          {s.label} · {s.count} role{s.count === 1 ? "" : "s"}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <button
-                    onClick={onClearFilters}
-                    className="text-xs font-medium text-ink underline underline-offset-4"
-                  >
-                    Clear all filters
-                  </button>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-border bg-surface px-5 py-12 text-center text-sm text-ink-muted">
-                  No roles match these filters.
-                </div>
-              ))}
+            {sorted.length === 0 && (
+              <div className="rounded-xl border border-dashed border-border bg-surface px-5 py-12 text-center text-sm text-ink-muted">
+                {loadingJobs ? "Loading active roles..." : "No roles match these filters."}
+              </div>
+            )}
           </div>
 
           <div className="mt-8">
@@ -664,50 +332,31 @@ function JobsPage() {
         {/* Spotlight rail */}
         <aside className="hidden min-w-0 lg:block">
           <div className="sticky top-24 space-y-5">
-            {(() => {
-              const current = spotlight.current;
-              if (!current) return null;
-              return (
-                <div className="rounded-xl border border-accent/30 bg-gradient-to-br from-surface to-accent/[0.06] p-4">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-accent-ink" />
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-accent-ink">
-                      In the spotlight
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[11px] text-ink-muted">
-                    Rotates daily from verified, salary-disclosed, remote-friendly roles.
-                  </p>
-                  <div className="mt-3">
-                    <JobCard
-                      job={current}
-                      variant="rail"
-                      onNavigate={() =>
-                        trackEvent(
-                          jobsIndexJobAnalyticsEvent(),
-                          jobsIndexJobAnalyticsData(
-                            current.slug,
-                            current.tier,
-                            0,
-                            jobs.length,
-                            "rail",
-                          ),
-                        )
-                      }
-                    />
-                  </div>
-                  <div className="mt-2 text-[10px] text-ink-subtle">
-                    Posted {relativePosted(current.postedAt)}
-                    {current.lastVerifiedAt ? " · employer verified" : ""}
-                  </div>
-                  {spotlight.next && (
-                    <div className="mt-3 border-t border-border pt-2 text-[10px] text-ink-subtle">
-                      Up next: <span className="text-ink-muted">{spotlight.next.title}</span>
-                    </div>
-                  )}
+            {spotlight.current && (
+              <div className="rounded-xl border border-accent/30 bg-gradient-to-br from-surface to-accent/[0.06] p-4">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-accent-ink" />
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-accent-ink">
+                    In the spotlight
+                  </span>
                 </div>
-              );
-            })()}
+                <p className="mt-1 text-[11px] text-ink-muted">
+                  Rotates daily from verified, salary-disclosed, remote-friendly roles.
+                </p>
+                <div className="mt-3">
+                  <JobCard job={spotlight.current} variant="rail" />
+                </div>
+                <div className="mt-2 text-[10px] text-ink-subtle">
+                  Posted {relativePosted(spotlight.current.postedAt)}
+                  {spotlight.current.lastVerifiedAt ? " · employer verified" : ""}
+                </div>
+                {spotlight.next && (
+                  <div className="mt-3 border-t border-border pt-2 text-[10px] text-ink-subtle">
+                    Up next: <span className="text-ink-muted">{spotlight.next.title}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="rounded-xl border border-border bg-surface p-4 text-xs">
               <div className="eyebrow mb-2">Why post here</div>
@@ -716,24 +365,12 @@ function JobsPage() {
                 <li>· Verified employer badge on every paid tier</li>
                 <li>· Carried in the weekly brief and RSS feed</li>
               </ul>
-              {(() => {
-                const destination = jobsIndexPostDestination("post");
-                if (!destination) return null;
-                return (
-                  <Link
-                    to={destination.to}
-                    onClick={() =>
-                      trackEvent(
-                        jobsIndexPostAnalyticsEvent(),
-                        jobsIndexPostAnalyticsData(jobs.length, "sidebar"),
-                      )
-                    }
-                    className="mt-3 inline-flex h-9 w-full items-center justify-center gap-1 rounded-md bg-ink text-xs font-medium text-background hover:bg-ink/90"
-                  >
-                    Post a role <ArrowUpRight className="h-3 w-3" />
-                  </Link>
-                );
-              })()}
+              <Link
+                to="/jobs/post"
+                className="mt-3 inline-flex h-9 w-full items-center justify-center gap-1 rounded-md bg-ink text-xs font-medium text-background hover:bg-ink/90"
+              >
+                Post a role <ArrowUpRight className="h-3 w-3" />
+              </Link>
             </div>
           </div>
         </aside>

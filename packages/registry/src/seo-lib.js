@@ -219,16 +219,7 @@ export function buildEntryJsonLd(entry, params = {}) {
     isPartOf: {
       "@id": `${siteUrl.replace(/\/$/, "")}/#website`,
     },
-    // websiteUrl leads: schema.org defines sameAs as a URL that "unambiguously
-    // indicates the item's identity", and a project's official site is the
-    // strongest such signal. It was previously only reachable via isBasedOn,
-    // which asserts provenance ("derived from") rather than identity — so the
-    // vendor's own domain was never tied to the entity this page describes.
-    sameAs: uniqueValues([
-      entry.websiteUrl,
-      entry.documentationUrl,
-      entry.repoUrl,
-    ]),
+    sameAs: uniqueValues([entry.documentationUrl, entry.repoUrl]),
     isBasedOn: sourceUrls.length ? sourceUrls : undefined,
     codeRepository:
       entryType === "SoftwareSourceCode" ? entry.repoUrl : undefined,

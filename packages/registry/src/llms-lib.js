@@ -72,12 +72,9 @@ export function bulletList(values) {
 
 export function entrySourceUrls(entry) {
   return [
-    // Use `||`, not `??`: normalized entries default missing URLs to "" rather
-    // than undefined, and `??` would let an empty-string primary swallow a real
-    // docsUrl/sourceUrl alias. The array is clean()+filter(Boolean) guarded.
-    entry.documentationUrl || entry.docsUrl,
+    entry.documentationUrl ?? entry.docsUrl,
     entry.repoUrl,
-    entry.githubUrl || entry.sourceUrl,
+    entry.githubUrl ?? entry.sourceUrl,
     entry.websiteUrl,
   ]
     .map(clean)
@@ -146,27 +143,22 @@ export function buildEntryCitationFacts(entry, params = {}) {
 export function renderEntryLlms(entry, params = {}) {
   const siteUrl = params.siteUrl || "https://heyclau.de";
   const permalink = `${siteUrl.replace(/\/$/, "")}/entry/${entry.category}/${entry.slug}`;
-  // `undefined` marks a line to omit entirely; `""` is an intentional blank-line
-  // separator that must survive the filter. (A single `""` sentinel for both
-  // intents is the bug this fixes — `.filter(Boolean)` dropped every blank line.)
   const lines = [
     `# ${clean(entry.title)}`,
     "",
     `URL: ${permalink}`,
     `Category: ${entry.category}`,
-    entry.author ? `Author: ${entry.author}` : undefined,
-    entry.submittedBy ? `Submitted by: ${entry.submittedBy}` : undefined,
+    entry.author ? `Author: ${entry.author}` : "",
+    entry.submittedBy ? `Submitted by: ${entry.submittedBy}` : "",
     entry.sourceSubmissionUrl
       ? `Original submission: ${entry.sourceSubmissionUrl}`
-      : undefined,
-    entry.importPrUrl ? `Import PR: ${entry.importPrUrl}` : undefined,
-    entry.dateAdded ? `Date added: ${entry.dateAdded}` : undefined,
-    entry.documentationUrl
-      ? `Documentation: ${entry.documentationUrl}`
-      : undefined,
-    entry.repoUrl ? `Repository: ${entry.repoUrl}` : undefined,
-    entry.githubUrl ? `Directory source: ${entry.githubUrl}` : undefined,
-    entry.downloadUrl ? `Download: ${entry.downloadUrl}` : undefined,
+      : "",
+    entry.importPrUrl ? `Import PR: ${entry.importPrUrl}` : "",
+    entry.dateAdded ? `Date added: ${entry.dateAdded}` : "",
+    entry.documentationUrl ? `Documentation: ${entry.documentationUrl}` : "",
+    entry.repoUrl ? `Repository: ${entry.repoUrl}` : "",
+    entry.githubUrl ? `Directory source: ${entry.githubUrl}` : "",
+    entry.downloadUrl ? `Download: ${entry.downloadUrl}` : "",
     "",
     "## Citation Facts",
     buildEntryCitationFacts(entry, { siteUrl }),
@@ -179,16 +171,16 @@ export function renderEntryLlms(entry, params = {}) {
       ? entry.tags.map((tag) => `- ${tag}`).join("\n")
       : "- none",
     "",
-    entry.safetyNotes?.length ? "## Safety Notes" : undefined,
+    entry.safetyNotes?.length ? "## Safety Notes" : "",
     ...bulletList(entry.safetyNotes),
-    entry.safetyNotes?.length ? "" : undefined,
-    entry.privacyNotes?.length ? "## Privacy Notes" : undefined,
+    entry.safetyNotes?.length ? "" : "",
+    entry.privacyNotes?.length ? "## Privacy Notes" : "",
     ...bulletList(entry.privacyNotes),
-    entry.privacyNotes?.length ? "" : undefined,
+    entry.privacyNotes?.length ? "" : "",
     "## Content",
     sectionText(entry),
     "",
-  ].filter((line) => line !== undefined);
+  ].filter(Boolean);
 
   return trimLineEndings(lines.join("\n"));
 }

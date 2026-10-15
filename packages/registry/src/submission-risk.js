@@ -5,33 +5,6 @@ import {
   TOOLS_LISTING_FLOW_URL,
 } from "./submission-classification.js";
 import { parseSafeFrontmatter } from "./frontmatter.js";
-import {
-  hasBase64DecodedShell,
-  hasPipeToShellInstall,
-  hasWorldWritableChmod,
-} from "./command-safety-lib.js";
-import {
-  AFFILIATE_PARAMS,
-  isLikelyAffiliateUrl,
-  isPublicGitHubProfileUrl,
-  isPublicHttpUrl,
-  isPublicHttpsUrl,
-  publicUrlHostname,
-} from "./source-url-lib.js";
-
-// Curl/wget → shell detection is command-boundary-aware via hasPipeToShellInstall
-// (#5556). The previous bounded-window regex false-positived across `;`/`&&`.
-// Base64 → shell uses hasBase64DecodedShell for the same reason (#5591): the old
-// `\bbase64\s+(-d|--decode)\b` regex missed bundled flags (`-di`), `sudo`, and
-// pipe-chain passthroughs that the shared helper already handles.
-
-// Anthropic (`sk-ant-…`) and OpenAI (`sk-proj-…`) insert a hyphenated segment after
-// `sk-`, which the old `sk-[a-z0-9]{20,}` alternative could never match (#5479).
-// Extended for PEM private-key headers, Slack xox* tokens, and Stripe live keys
-// (#5557). PEM sits outside the `\b…\b` group because a leading `-----` is
-// non-word and would not satisfy a leading word boundary at line start.
-const EMBEDDED_SECRET_PATTERN =
-  /(?:\b(?:(?:ghp|gho|ghu|ghs|ghr)_[a-z0-9_]{20,}|github_pat_[a-z0-9_]{40,}|sk-(?:ant-|proj-)?[a-z0-9-]{20,}|akia[0-9a-z]{16}|xq_[a-f0-9]{40,}|xox[baprs]-[a-z0-9-]{10,}|sk_live_[a-z0-9]{16,})\b|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/i;
 
 export const SUBMISSION_RISK_SCHEMA_VERSION = 1;
 export const SUBMISSION_RISK_COMMENT_MARKER = "<!-- submission-risk-report -->";
@@ -40,11 +13,7 @@ const SEVERITY_WEIGHT = {
   info: 0,
   low: 1,
   medium: 3,
-  // `high` is weighted at the "high" tier threshold (7) so a single high-severity
-  // flag on its own reaches riskTier "high" and routes to maintainer review,
-  // instead of falling one point short into "medium" (auto-eligible). Kept at 7
-  // (not lowering the tier threshold to 6) so two `medium` flags stay "medium".
-  high: 7,
+  high: 6,
   critical: 100,
 };
 
@@ -52,13 +21,6 @@ const HEYCLAUDE_HOSTNAME = "heyclau.de";
 
 const SAFETY_NOTE_REQUIRED_FLAGS = new Set([
   "unsafe_install_pipeline",
-  "mutable_script_install_source",
-  // Critical-severity sibling of the two flags above in the
-  // `unsafe_install_or_secret` capability bucket (#5589). Executing or fetching
-  // install/usage content over plain HTTP is an execution-surface risk, so it
-  // belongs here rather than in PRIVACY_NOTE_REQUIRED_FLAGS with the bucket's
-  // credential-shaped member `embedded_secret`.
-  "non_https_executable_source",
   "financial_or_identity_sensitive",
   "external_write_capability",
   "destructive_actions",
@@ -66,11 +28,6 @@ const SAFETY_NOTE_REQUIRED_FLAGS = new Set([
   "community_archive_download",
   "community_local_download_request",
   "background_worker_or_daemon",
-  // High-severity malware/abuse tooling vocabulary (#5559). Safety notes fit
-  // better than privacy notes: this flag is about dangerous tooling surface /
-  // security review, not credential or personal-data access. Sibling
-  // `malicious_data_theft_capability` stays in PRIVACY_NOTE_REQUIRED_FLAGS.
-  "malware_or_abuse_surface",
 ]);
 
 const PRIVACY_NOTE_REQUIRED_FLAGS = new Set([
@@ -104,17 +61,8 @@ const IDENTITY_ATTESTATION_REVERSE_PATTERN = new RegExp(
   `\\b(?:${SENSITIVE_ATTESTATION_REVERSE_TERMS})s?\\b[\\s\\S]{0,120}\\battestations?\\b`,
   "i",
 );
-// Also covers malware/abuse-tooling vocabulary on the action→threat direction
-// (#5584) so defensive anti-malware phrasing ("detects ransomware", "removes
-// keyloggers") gets the same safe harbor as credential-theft mitigation.
-// Malware terms are intentionally NOT added to the reverse (threat→action)
-// alternative: titles like "Ransomware …" plus a later "review" token in a
-// docs URL would false-harbor. Verb forms include optional trailing `s`
-// (`detects?`/`blocks?`/`removes?`) to match natural defensive prose.
 const DEFENSIVE_SECURITY_MITIGATION_PATTERN =
-  /\b(prevent|protect|warn(?:s|ing)? before|blocks?|detects?|detection|redact|sanitize|audit|review|remediate|remediation|removes?|hardening|least privilege|safe configuration|avoid (?:pasting|exposing|leaking)|leak warning)\b[\s\S]{0,160}\b(?:(?:credential|password|cookie|session|token|wallet|secret|leak)s?|expos(?:e|ing|ure)|ransomware|trojans?|keyloggers?|backdoors?|botnets?|worms?|cryptojackers?|malware)\b|\b(?:credential|password|cookie|session|token|wallet|secret)s?\b[\s\S]{0,160}\b(prevent|protect|warn(?:s|ing)? before|blocks?|detects?|detection|redact|sanitize|audit|review|remediate|remediation|removes?|hardening|least privilege|safe configuration|avoid (?:pasting|exposing|leaking)|leak warning)\b/i;
-const MALWARE_OR_ABUSE_SURFACE_PATTERN =
-  /\b(ransomware|trojan|keylogger|credential stealer|password stealer|cookie stealer|backdoor|botnet|worm|cryptojacker|malware)\b/i;
+  /\b(prevent|protect|warn(?:s|ing)? before|block|detect|detection|redact|sanitize|audit|review|remediate|remediation|hardening|least privilege|safe configuration|avoid (?:pasting|exposing|leaking)|leak warning)\b[\s\S]{0,160}\b(?:(?:credential|password|cookie|session|token|wallet|secret|leak)s?|expos(?:e|ing|ure))\b|\b(?:credential|password|cookie|session|token|wallet|secret)s?\b[\s\S]{0,160}\b(prevent|protect|warn(?:s|ing)? before|block|detect|detection|redact|sanitize|audit|review|remediate|remediation|hardening|least privilege|safe configuration|avoid (?:pasting|exposing|leaking)|leak warning)\b/i;
 const RESOURCE_THEFT_CAPABILITY_PATTERN =
   /\b(?:this|the|our)?\s*(?:agent|command|hook|mcp|server|skill|statusline|tool|workflow)\b[\s\S]{0,40}\b(?:can|will|does|advertises?|offers?|enables?|designed to|built to)\b[\s\S]{0,80}\b(steals?|exfiltrates?|harvests?|dumps?)\b[\s\S]{0,80}\b(credential|password|cookie|session|token|wallet)s?\b|\b(steals?|exfiltrates?|harvests?|dumps?)\b[\s\S]{0,80}\b(credential|password|cookie|session|token|wallet)s?\b[\s\S]{0,80}\b(?:with|using|through|by)\b[\s\S]{0,40}\b(?:agent|command|hook|mcp|server|skill|statusline|tool|workflow)\b/i;
 // Adult "xxx" only in an explicit adult context, so legitimate developer idioms
@@ -145,7 +93,8 @@ function isLoopbackHttpUrl(value) {
     const url = new URL(value.trim());
     return (
       url.protocol === "http:" &&
-      isPublicHttpUrl(value) &&
+      url.username === "" &&
+      url.password === "" &&
       LOOPBACK_HTTP_HOSTNAMES.has(url.hostname)
     );
   } catch {
@@ -331,17 +280,28 @@ function draftUrl(draft = {}) {
   return normalizeText(draft.html_url || draft.url);
 }
 
+function isHttpsUrl(value) {
+  const text = normalizeText(value);
+  if (!text) return false;
+  try {
+    return new URL(text).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function hostname(value) {
-  return publicUrlHostname(normalizeText(value));
+  try {
+    return new URL(normalizeText(value)).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
 }
 
 function githubRepoFromUrl(value) {
   try {
     const url = new URL(normalizeText(value));
-    const hostname = url.hostname.replace(/^www\./i, "").toLowerCase();
-    if (!isPublicHttpsUrl(value) || hostname !== "github.com") {
-      return "";
-    }
+    if (url.protocol !== "https:" || url.hostname !== "github.com") return "";
     const [owner, repo] = url.pathname.split("/").filter(Boolean);
     return owner && repo ? `${owner}/${repo}` : "";
   } catch {
@@ -350,11 +310,9 @@ function githubRepoFromUrl(value) {
 }
 
 function githubLoginFromUrl(value) {
-  if (!isPublicGitHubProfileUrl(value)) {
-    return "";
-  }
   try {
     const url = new URL(normalizeText(value));
+    if (url.protocol !== "https:" || url.hostname !== "github.com") return "";
     const [login] = url.pathname.split("/").filter(Boolean);
     return login || "";
   } catch {
@@ -686,8 +644,6 @@ const CAPABILITY_BUCKET_BY_FLAG = {
   commercial_listing_route: "commercial_or_listing_route",
   non_https_executable_source: "unsafe_install_or_secret",
   unsafe_install_pipeline: "unsafe_install_or_secret",
-  mutable_script_install_source: "unsafe_install_or_secret",
-  affiliate_referral_url: "commercial_or_listing_route",
   malicious_data_theft_capability: "abuse_or_malware",
   malware_or_abuse_surface: "abuse_or_malware",
   prohibited_content: "abuse_or_malware",
@@ -894,7 +850,7 @@ function addSourceSignals(report, fields, text) {
   }
 
   for (const url of sourceFields) {
-    if (!isPublicHttpsUrl(url)) {
+    if (!isHttpsUrl(url)) {
       addFlag(
         report,
         "medium",
@@ -942,260 +898,6 @@ function addSchemaSignals(report, validationReport) {
   );
 }
 
-// Ported from scripts/ci/validate-content-policy.mjs so the risk report
-// maintainers read matches what the CI gate blocks on. These helpers are pure
-// (no filesystem or network access). The CI script stays the source of truth;
-// changes there need mirroring here.
-const FULL_COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
-
-const LOCAL_SCRIPT_REFERENCE_PATTERN =
-  /(?:^|[\s`;&|])(?:(?:bash|sh|zsh|pwsh|powershell)\s+)?(?:\.{1,2}\/|[\w.-]+\/)?[\w./-]*(?:install|setup|start|bootstrap|init)[\w.-]*\.(?:sh|bash|zsh|ps1)\b/im;
-
-// isLikelyAffiliateUrl is imported from source-url-lib.js (#5637) — combines
-// query-param and path-based affiliate checks used by both field validation
-// (submission-lib.js) and this snippet scanner so both gates agree.
-
-// True when install text contains world-writable chmod, using the same
-// hardened detector as scanDangerousShellPatterns (#5640). Recursive-force
-// `rm` is intentionally *not* OR'd here (#5709): unscoped `rm -rf ./dist`
-// cleanup is ordinary install hygiene and must not raise critical
-// `unsafe_install_pipeline`. Root/home targets stay covered by
-// `referencesDestructiveRootRemoval` in the same OR-chain.
-// Line-by-line like the curl/base64 helpers; installText is already lowercased.
-function hasDestructiveInstallShellPatterns(installText) {
-  for (const line of String(installText ?? "").split(/\r?\n/)) {
-    if (!line) continue;
-    if (hasWorldWritableChmod(line, line)) return true;
-  }
-  return false;
-}
-
-function githubSourceRef(value) {
-  const raw = normalizeText(value);
-  if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (url.protocol !== "https:") return null;
-    if (url.hostname.toLowerCase() === "raw.githubusercontent.com") {
-      if (parts.length < 4) return null;
-      return {
-        owner: parts[0].toLowerCase(),
-        repo: parts[1].replace(/\.git$/i, "").toLowerCase(),
-        ref: parts[2],
-        path: parts.slice(3).join("/"),
-      };
-    }
-    if (
-      url.hostname.toLowerCase() === "github.com" &&
-      parts.length >= 5 &&
-      (parts[2] === "blob" || parts[2] === "raw")
-    ) {
-      return {
-        owner: parts[0].toLowerCase(),
-        repo: parts[1].replace(/\.git$/i, "").toLowerCase(),
-        ref: parts[3],
-        path: parts.slice(4).join("/"),
-      };
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function githubRepoRefFromUrl(value) {
-  const raw = normalizeText(value);
-  if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    if (
-      url.protocol !== "https:" ||
-      url.hostname.toLowerCase() !== "github.com"
-    ) {
-      return null;
-    }
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length < 2) return null;
-    return {
-      owner: parts[0].toLowerCase(),
-      repo: parts[1].replace(/\.git$/i, "").toLowerCase(),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function githubRepoKey(source) {
-  if (!source?.owner || !source?.repo) return "";
-  return `${source.owner}/${source.repo}`;
-}
-
-function collectGitCloneRepos(value) {
-  const text = normalizeText(value);
-  const repos = [];
-  const clonePattern =
-    /\bgit\s+clone\b[^\n;&|]*?(https:\/\/github\.com\/[^\s`'"<>]+|git@github\.com:[^\s`'"<>]+)/gi;
-  for (const match of text.matchAll(clonePattern)) {
-    const rawRepo = match[1].replace(
-      /^git@github\.com:/i,
-      "https://github.com/",
-    );
-    const repo = githubRepoRefFromUrl(rawRepo);
-    if (repo) repos.push(repo);
-  }
-  return repos;
-}
-
-function normalizeScriptPath(value) {
-  return normalizeText(value)
-    .replace(/^['"`]+|['"`]+$/g, "")
-    .replace(/^(?:\.\.?\/)+/, "")
-    .replace(/\/{2,}/g, "/")
-    .toLowerCase();
-}
-
-function isScriptPath(value) {
-  return /\.(?:sh|bash|zsh|ps1)$/i.test(normalizeText(value));
-}
-
-function collectLocalScriptInstallRefs(value) {
-  const text = normalizeText(value);
-  const scriptPattern =
-    /(?:^|[\s`;&|])(?:(?:bash|sh|zsh|pwsh|powershell)\s+)?((?:\.{1,2}\/|[\w.-]+\/)?[\w./-]*(?:install|setup|start|bootstrap|init)[\w.-]*\.(?:sh|bash|zsh|ps1))\b/gim;
-  return [...text.matchAll(scriptPattern)]
-    .map((match) => ({
-      path: normalizeScriptPath(match[1]),
-      index: match.index ?? 0,
-    }))
-    .filter((script) => script.path);
-}
-
-function checkoutCommitIndex(value, commit) {
-  const escapedCommit = commit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = normalizeText(value).match(
-    new RegExp(
-      `\\bgit\\s+(?:checkout|switch\\s+--detach)\\s+(?:[^\\n;&|]*\\s)?${escapedCommit}\\b`,
-      "i",
-    ),
-  );
-  return match?.index ?? -1;
-}
-
-function referencesClonedLocalScriptInstall(value) {
-  const text = normalizeText(value);
-  return (
-    /\bgit\s+clone\b/i.test(text) && LOCAL_SCRIPT_REFERENCE_PATTERN.test(text)
-  );
-}
-
-function hasBoundImmutableGithubScriptEvidence(sourceUrls, installText) {
-  const clonedRepoKeys = new Set(
-    collectGitCloneRepos(installText).map(githubRepoKey),
-  );
-  if (!clonedRepoKeys.size) return false;
-  const executedScripts = collectLocalScriptInstallRefs(installText);
-  if (!executedScripts.length) return false;
-
-  return sourceUrls.some((value) => {
-    const source = githubSourceRef(value);
-    if (
-      !source ||
-      !FULL_COMMIT_SHA_PATTERN.test(source.ref) ||
-      !isScriptPath(source.path) ||
-      !clonedRepoKeys.has(githubRepoKey(source))
-    ) {
-      return false;
-    }
-
-    const checkoutIndex = checkoutCommitIndex(installText, source.ref);
-    if (checkoutIndex < 0) return false;
-    const scriptPath = normalizeScriptPath(source.path);
-    return executedScripts.some(
-      (script) => script.path === scriptPath && checkoutIndex < script.index,
-    );
-  });
-}
-
-function isMutableGithubSourceUrl(value) {
-  const source = githubSourceRef(value);
-  return Boolean(source && !FULL_COMMIT_SHA_PATTERN.test(source.ref));
-}
-
-/**
- * Recursive-force removal aimed at the filesystem root or the user's home.
- *
- * The previous single regex required the literal `-rf` token and a word
- * boundary after the target, so it missed `rm -rf /` and `rm -rf ~` - the two
- * most literal ways to write "delete everything" - along with every
- * flag-ordering variant. Parse the flag run instead of pattern-matching one
- * spelling: any option cluster carrying both recursive and force counts,
- * whether written `-rf`, `-fr`, `-r -f`, or `--recursive --force`.
- *
- * Targets stay deliberately narrow (`/`, `/etc`, `~`, `$HOME`, and
- * `${HOME}`, plus glob-suffixed forms like `/*` / `~/*` — #5709). Relative
- * paths like `./build` are ordinary cleanup and must not flag. Each target
- * alternative ends in a delimiter/end-of-command lookahead so
- * `/tmp/scratch`, `~/cache`, and `$HOME/tmp` aren't swallowed as a matching
- * prefix of `/`, `~`, or `$HOME` - only the bare target itself (optionally
- * with one trailing `/` or a trailing `/*` glob) is destructive.
- */
-function referencesDestructiveRootRemoval(value) {
-  const text = String(value || "");
-  const pattern =
-    /\brm\b((?:\s+-{1,2}[a-z][a-z-]*)+)\s+(?:\/etc(?:\/\*|\/?(?=[\s;&|)'"`]|$))|\/(?:\*|\/?(?=[\s;&|)'"`]|$))|~(?:\/\*|\/?(?=[\s;&|)'"`]|$))|\$home(?:\/\*|\/?(?=[\s;&|)'"`]|$))|\$\{home\}(?:\/\*|\/?(?=[\s;&|)'"`]|$)))/gi;
-
-  for (const match of text.matchAll(pattern)) {
-    const flags = match[1].toLowerCase().split(/\s+/).filter(Boolean);
-    const recursive = flags.some(
-      (flag) =>
-        flag === "--recursive" || (!flag.startsWith("--") && /r/.test(flag)),
-    );
-    const force = flags.some(
-      (flag) =>
-        flag === "--force" || (!flag.startsWith("--") && /f/.test(flag)),
-    );
-    if (recursive && force) return true;
-  }
-
-  return false;
-}
-
-// True when a curl/wget invocation's own output is piped to a shell in the same
-// command segment. Uses hasPipeToShellInstall (pipeChainSegments) so `;`/`&&`/
-// `||`/`&` barriers reset downloader state and stop the #5556 false positives.
-// Scans line-by-line like scanDangerousShellPatterns. Also scans double-quoted
-// interiors because config/JSON snippets embed pipelines inside quotes, where
-// pipeChainSegments does not treat `|` as a pipe. `installText` is already
-// lowercased by addContentRiskSignals.
-function hasUnsafeCurlWgetPipeToShell(installText) {
-  for (const line of String(installText ?? "").split(/\r?\n/)) {
-    if (!line) continue;
-    if (hasPipeToShellInstall(line, line)) return true;
-    for (const match of line.matchAll(/"([^"]*)"/g)) {
-      const inner = match[1];
-      if (inner && hasPipeToShellInstall(inner, inner)) return true;
-    }
-  }
-  return false;
-}
-
-// True when a base64-decode segment feeds a shell later in the same pipe chain.
-// Mirrors hasUnsafeCurlWgetPipeToShell: line-by-line + double-quoted interiors,
-// so config/JSON embeds keep flagging while bundled flags (`-di`), `sudo`, and
-// passthrough commands are handled by hasBase64DecodedShell (#5591).
-function hasUnsafeBase64DecodedShell(installText) {
-  for (const line of String(installText ?? "").split(/\r?\n/)) {
-    if (!line) continue;
-    if (hasBase64DecodedShell(line, line)) return true;
-    for (const match of line.matchAll(/"([^"]*)"/g)) {
-      const inner = match[1];
-      if (inner && hasBase64DecodedShell(inner, inner)) return true;
-    }
-  }
-  return false;
-}
-
 function addContentRiskSignals(report, fields, text) {
   const installText = lower(
     [
@@ -1220,38 +922,11 @@ function addContentRiskSignals(report, fields, text) {
     );
   }
 
-  // The submitted source URLs addSourceSignals collected for this report, which
-  // both ported checks below classify (the CI script calls the same list
-  // `submittedSourceUrls`).
-  const submittedSourceUrls = report.sourceUrls || [];
-
-  if (submittedSourceUrls.some(isLikelyAffiliateUrl)) {
-    addFlag(
-      report,
-      "high",
-      "affiliate_referral_url",
-      "Contributor content contains affiliate or referral URL parameters",
-      submittedSourceUrls.filter(isLikelyAffiliateUrl).join(", "),
-    );
-  }
-
   if (
-    referencesClonedLocalScriptInstall(installText) &&
-    !hasBoundImmutableGithubScriptEvidence(submittedSourceUrls, installText)
+    /\b(ghp_[a-z0-9_]{20,}|github_pat_[a-z0-9_]{40,}|sk-[a-z0-9]{20,}|akia[0-9a-z]{16}|xq_[a-f0-9]{40,})\b/i.test(
+      text,
+    )
   ) {
-    const mutableSources = submittedSourceUrls.filter(isMutableGithubSourceUrl);
-    addFlag(
-      report,
-      "critical",
-      "mutable_script_install_source",
-      "Install instructions run a cloned local installer script without immutable script source evidence",
-      mutableSources.length
-        ? `Mutable GitHub source refs: ${mutableSources.slice(0, 5).join(", ")}`
-        : "Add a raw GitHub URL pinned to a full commit SHA for the executed installer script, or replace the script execution with reviewed commands.",
-    );
-  }
-
-  if (EMBEDDED_SECRET_PATTERN.test(text)) {
     addFlag(
       report,
       "critical",
@@ -1298,12 +973,15 @@ function addContentRiskSignals(report, fields, text) {
   }
 
   if (
-    referencesDestructiveRootRemoval(installText) ||
-    hasUnsafeCurlWgetPipeToShell(installText) ||
+    /rm\s+-rf\s+(\/|~|\$home)\b/i.test(installText) ||
+    /\b(curl|wget)\b[\s\S]{0,120}\|[\s\S]{0,40}\b(sudo\s+)?(sh|bash)\b/i.test(
+      installText,
+    ) ||
     /\b(invoke-expression|iex)\b/i.test(installText) ||
-    hasUnsafeBase64DecodedShell(installText) ||
-    /\bpowershell\b[\s\S]{0,80}\b-encodedcommand\b/i.test(installText) ||
-    hasDestructiveInstallShellPatterns(installText)
+    /\bbase64\s+(-d|--decode)\b[\s\S]{0,80}\|[\s\S]{0,40}\b(sh|bash)\b/i.test(
+      installText,
+    ) ||
+    /\bpowershell\b[\s\S]{0,80}\b-encodedcommand\b/i.test(installText)
   ) {
     addFlag(
       report,
@@ -1325,12 +1003,10 @@ function addContentRiskSignals(report, fields, text) {
     );
   }
 
-  // Same defensive safe-harbor gate as malicious_data_theft_capability (#5584):
-  // anti-malware/security tools that mitigate ransomware/trojans/keyloggers must
-  // not be treated as malware/abuse surface themselves.
   if (
-    !hasDefensiveSecuritySafeHarbor(text) &&
-    MALWARE_OR_ABUSE_SURFACE_PATTERN.test(text)
+    /\b(ransomware|trojan|keylogger|credential stealer|password stealer|cookie stealer|backdoor|botnet|worm|cryptojacker|malware)\b/i.test(
+      text,
+    )
   ) {
     addFlag(
       report,
@@ -1496,12 +1172,7 @@ function addDisclosureNoteSignals(report, fields) {
   }
 }
 
-// Classify a set of review flags into a risk tier from their summed severity
-// weights (any `critical` flag short-circuits to "critical"). Exported for
-// focused boundary tests. Threshold 7 with SEVERITY_WEIGHT.high === 7 means a
-// single high-severity flag reaches "high"; two `medium` flags (3 + 3 = 6) stay
-// "medium".
-export function tierFromFlags(flags) {
+function tierFromFlags(flags) {
   if (flags.some((flag) => flag.severity === "critical")) return "critical";
   const score = flags.reduce(
     (total, flag) => total + (SEVERITY_WEIGHT[flag.severity] ?? 0),
@@ -1721,10 +1392,6 @@ export function directContentRequestChangesReasons(report = {}) {
       "Community PRs cannot request HeyClaude-hosted /downloads package URLs.",
     commercial_listing_route:
       "Commercial API relays, paid gateways, and pay-per-use proxy services belong in the tools/listing flow.",
-    affiliate_referral_url:
-      "Contributor content cannot include affiliate or referral URL parameters.",
-    mutable_script_install_source:
-      "Install instructions run a cloned local installer script without immutable script source evidence.",
     non_https_executable_source:
       "Install or usage instructions fetch executable content from a non-HTTPS URL.",
     unsafe_install_pipeline:

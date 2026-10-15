@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  buildWorklist,
-  parseGrowthDashboardArgs,
-  trustGaps,
-} from "../scripts/lib/growth-dashboard.mjs";
+import { buildWorklist, trustGaps } from "../scripts/lib/growth-dashboard.mjs";
 
 function entry(partial: Record<string, unknown>) {
   return {
@@ -22,43 +18,12 @@ describe("trustGaps", () => {
     expect(gaps).toEqual(["safetyNotes", "privacyNotes", "source"]);
   });
 
-  it("still flags source when only the self-referential directory githubUrl is set", () => {
-    const gaps = trustGaps(
-      entry({
-        safetyNotes: ["runs shell"],
-        privacyNotes: ["telemetry"],
-        githubUrl:
-          "https://github.com/JSONbored/awesome-claude/blob/main/content/mcp/x.mdx",
-      }),
-    );
-    expect(gaps).toEqual([
-      {
-        field: "source",
-        code: "missing",
-        detail: "no documentation or repository URL",
-      },
-    ]);
-  });
-
   it("clears once the signals are present", () => {
     const gaps = trustGaps(
       entry({
         safetyNotes: ["runs shell"],
         privacyNotes: ["telemetry"],
         repoUrl: "https://github.com/x/y",
-      }),
-    );
-    expect(gaps).toEqual([]);
-  });
-
-  it("clears the source gap when documentationUrl is present", () => {
-    const gaps = trustGaps(
-      entry({
-        safetyNotes: ["runs shell"],
-        privacyNotes: ["telemetry"],
-        documentationUrl: "https://example.com/docs",
-        githubUrl:
-          "https://github.com/JSONbored/awesome-claude/blob/main/content/mcp/x.mdx",
       }),
     );
     expect(gaps).toEqual([]);
@@ -110,35 +75,5 @@ describe("buildWorklist", () => {
     const first = buildWorklist(entries, new Map(), { limit: 2 });
     expect(first.items).toHaveLength(2);
     expect(first).toEqual(buildWorklist(entries, new Map(), { limit: 2 }));
-  });
-});
-
-describe("parseGrowthDashboardArgs", () => {
-  it("defaults to json off, no gsc, and limit 50", () => {
-    expect(parseGrowthDashboardArgs([])).toEqual({
-      json: false,
-      gsc: "",
-      limit: 50,
-    });
-  });
-
-  it("reads --json, --gsc and --limit", () => {
-    expect(
-      parseGrowthDashboardArgs(["--json", "--gsc", "gsc.csv", "--limit", "10"]),
-    ).toEqual({ json: true, gsc: "gsc.csv", limit: 10 });
-  });
-
-  it("falls back to '' for --gsc and 50 for a non-numeric/zero --limit", () => {
-    expect(parseGrowthDashboardArgs(["--gsc"]).gsc).toBe("");
-    expect(parseGrowthDashboardArgs(["--limit", "nope"]).limit).toBe(50);
-    expect(parseGrowthDashboardArgs(["--limit", "0"]).limit).toBe(50);
-  });
-
-  it("ignores unrecognized tokens", () => {
-    expect(parseGrowthDashboardArgs(["--nope", "stray"])).toEqual({
-      json: false,
-      gsc: "",
-      limit: 50,
-    });
   });
 });

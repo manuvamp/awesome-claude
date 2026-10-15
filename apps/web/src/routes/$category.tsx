@@ -7,9 +7,9 @@ import {
   categoryLabels,
   categoryDescriptions,
   categorySeoDescriptions,
+  categoryUsageHints,
   categoryQuickstarts,
 } from "@/lib/site";
-import { faqFor } from "@/lib/category-faq-lib";
 import { ResourceCard } from "@/components/resource-card";
 import { PageContainer } from "@/components/page-container";
 import { PageHeader } from "@/components/page-header";
@@ -17,31 +17,36 @@ import { NewsletterInline } from "@/components/newsletter-inline";
 import { HubHighlights, HubSignalStats } from "@/components/hub-highlights";
 import { CategoryRankingTable } from "@/components/category-ranking-table";
 import { hubHighlights, hubStats } from "@/lib/hub-highlights";
-import { trackEvent } from "@/lib/analytics";
-import {
-  categoryHubBrowseAnalyticsData,
-  categoryHubBrowseAnalyticsEvent,
-  categoryHubBrowseDestination,
-  categoryHubNotFoundEgressAnalyticsData,
-  categoryHubNotFoundEgressAnalyticsEvent,
-  categoryHubNotFoundEgressDestination,
-  categoryHubSeeAllAnalyticsData,
-  categoryHubSeeAllAnalyticsEvent,
-  categoryHubSeeAllDestination,
-} from "@/lib/directory-hub-cta-events";
 import { stringifyJsonLd } from "@/lib/json-ld";
-import { breadcrumbListJsonLd } from "@/lib/breadcrumb-jsonld-lib";
-import { categoryItemListJsonLd } from "@/lib/category-itemlist-jsonld-lib";
-import { faqPageJsonLd } from "@/lib/faq-page-jsonld-lib";
 import { absoluteUrl } from "@/lib/seo";
 import { ogImageUrl, categoryAccent } from "@/lib/og-image";
-import { ogImageMetaTags } from "@/lib/og-meta-lib";
 
 const categoryIds = new Set(CATEGORIES.map((c) => c.id));
 
 // Reuse the canonical registry ranking (recommendedScore) so hub order matches /browse.
 // Cached per render pass so head() and the component don't each re-run the search.
 const topEntriesFor = cache((id: string) => search({ categories: [id as Category] }));
+
+function faqFor(id: string, label: string) {
+  return [
+    {
+      q: `What are Claude ${label}?`,
+      a:
+        categoryDescriptions[id] ??
+        `Claude ${label} are community-submitted resources curated in the HeyClaude directory.`,
+    },
+    {
+      q: `How do I use ${label} from HeyClaude?`,
+      a:
+        categoryUsageHints[id] ??
+        `Open any entry to see install or usage details, copy the snippet or config, and review the linked source before adding it to your Claude setup.`,
+    },
+    {
+      q: `Are HeyClaude ${label} reviewed before they are listed?`,
+      a: "Each entry is metadata-reviewed for source, trust, and safety/privacy signals before it appears. HeyClaude does not scan for malware, so always review the linked source before installing anything that touches your filesystem, network, or credentials.",
+    },
+  ];
+}
 
 export const Route = createFileRoute("/$category")({
   loader: ({ params }) => {
@@ -67,14 +72,27 @@ export const Route = createFileRoute("/$category")({
       accent: categoryAccent(id),
     });
 
-    const itemList = categoryItemListJsonLd(label, description, entries, absoluteUrl);
-    const breadcrumbs = breadcrumbListJsonLd([
-      { name: "Directory", item: absoluteUrl("/browse") },
-      { name: label, item: url },
-    ]);
-    // Same faqFor(id, label) data the component renders below, so the schema
-    // and the visible <dl> can never disagree.
-    const faqPage = faqPageJsonLd(faqFor(id, label));
+    const itemList = {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: `Claude ${label}`,
+      description,
+      numberOfItems: entries.length,
+      itemListElement: entries.slice(0, 30).map((e, i) => ({
+        "@type": "ListItem",
+        position: i + 1,
+        name: e.title,
+        url: absoluteUrl(`/entry/${e.category}/${e.slug}`),
+      })),
+    };
+    const breadcrumbs = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Directory", item: absoluteUrl("/browse") },
+        { "@type": "ListItem", position: 2, name: label, item: url },
+      ],
+    };
 
     return {
       meta: [
@@ -83,7 +101,13 @@ export const Route = createFileRoute("/$category")({
         { property: "og:title", content: title },
         { property: "og:description", content: description },
         { property: "og:url", content: url },
-        ...ogImageMetaTags(ogImage, "website"),
+        { property: "og:image", content: ogImage },
+        { property: "og:image:type", content: "image/png" },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { property: "og:type", content: "website" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: ogImage },
       ],
       links: [
         { rel: "canonical", href: url },
@@ -97,36 +121,24 @@ export const Route = createFileRoute("/$category")({
       scripts: [
         { type: "application/ld+json", children: stringifyJsonLd(itemList) },
         { type: "application/ld+json", children: stringifyJsonLd(breadcrumbs) },
-        { type: "application/ld+json", children: stringifyJsonLd(faqPage) },
       ],
     };
   },
   component: CategoryHub,
-  notFoundComponent: () => {
-    const destination = categoryHubNotFoundEgressDestination("browse");
-    return (
-      <div className="mx-auto max-w-2xl px-6 py-24 text-center">
-        <h1 className="h-display-2 text-ink">Category not found</h1>
-        <p className="mt-3 text-sm text-ink-muted">
-          That category doesn't exist. Browse the full HeyClaude directory instead.
-        </p>
-        {destination ? (
-          <Link
-            to={destination.to}
-            className="mt-6 inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
-            onClick={() =>
-              trackEvent(
-                categoryHubNotFoundEgressAnalyticsEvent(),
-                categoryHubNotFoundEgressAnalyticsData(),
-              )
-            }
-          >
-            Browse all <ArrowRight className="h-4 w-4" />
-          </Link>
-        ) : null}
-      </div>
-    );
-  },
+  notFoundComponent: () => (
+    <div className="mx-auto max-w-2xl px-6 py-24 text-center">
+      <h1 className="h-display-2 text-ink">Category not found</h1>
+      <p className="mt-3 text-sm text-ink-muted">
+        That category doesn't exist. Browse the full HeyClaude directory instead.
+      </p>
+      <Link
+        to="/browse"
+        className="mt-6 inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
+      >
+        Browse all <ArrowRight className="h-4 w-4" />
+      </Link>
+    </div>
+  ),
 });
 
 function CategoryHub() {
@@ -156,25 +168,13 @@ function CategoryHub() {
 
       <div className="mt-6 max-w-3xl">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          {(() => {
-            const destination = categoryHubBrowseDestination(id);
-            if (!destination) return null;
-            return (
-              <Link
-                to={destination.to}
-                search={destination.search}
-                onClick={() =>
-                  trackEvent(
-                    categoryHubBrowseAnalyticsEvent(),
-                    categoryHubBrowseAnalyticsData(id, entries.length),
-                  )
-                }
-                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
-              >
-                Browse &amp; filter all {label} <ArrowRight className="h-4 w-4" />
-              </Link>
-            );
-          })()}
+          <Link
+            to="/browse"
+            search={{ category: id }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
+          >
+            Browse &amp; filter all {label} <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
         {quickstart.length > 0 && (
           <div className="mt-6 rounded-xl border border-border bg-surface p-4">
@@ -210,47 +210,25 @@ function CategoryHub() {
         <h2 className="h-display-2 text-ink">Top {label}</h2>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {top.map((e) => (
-            <ResourceCard
-              key={`${e.category}/${e.slug}`}
-              entry={e}
-              variant="grid"
-              analyticsSurface="category-hub"
-            />
+            <ResourceCard key={`${e.category}/${e.slug}`} entry={e} variant="grid" />
           ))}
         </div>
         {entries.length > top.length && (
           <div className="mt-5 text-right">
-            {(() => {
-              const destination = categoryHubSeeAllDestination(id);
-              if (!destination) return null;
-              return (
-                <Link
-                  to={destination.to}
-                  search={destination.search}
-                  onClick={() =>
-                    trackEvent(
-                      categoryHubSeeAllAnalyticsEvent(),
-                      categoryHubSeeAllAnalyticsData(id, entries.length),
-                    )
-                  }
-                  className="story-link text-sm font-medium text-ink"
-                >
-                  See all {entries.length} {label} →
-                </Link>
-              );
-            })()}
+            <Link
+              to="/browse"
+              search={{ category: id }}
+              className="story-link text-sm font-medium text-ink"
+            >
+              See all {entries.length} {label} →
+            </Link>
           </div>
         )}
       </section>
 
       <CategoryRankingTable entries={entries.slice(0, 12)} label={label} />
 
-      <HubSignalStats
-        stats={stats}
-        total={entries.length}
-        surface="category-hub"
-        browseBase={{ category: id }}
-      />
+      <HubSignalStats stats={stats} total={entries.length} />
 
       <section className="mt-14">
         <h2 className="h-display-2 text-ink">Frequently asked</h2>

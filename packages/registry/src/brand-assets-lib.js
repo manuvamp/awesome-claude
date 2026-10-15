@@ -10,8 +10,6 @@
  * `@heyclaude/registry/brand-assets`) re-exports everything below so existing
  * imports stay unchanged.
  */
-import { isPublicHttpsUrl } from "./source-url-lib.js";
-
 export const BRAND_ASSET_SOURCES = [
   "brandfetch",
   "manual",
@@ -287,7 +285,7 @@ export function isAllowedBrandAssetUrl(value) {
 
   try {
     const parsed = new URL(raw);
-    if (!isPublicHttpsUrl(raw)) return false;
+    if (parsed.protocol !== "https:") return false;
     const host = parsed.hostname.toLowerCase();
     return (
       host === "cdn.brandfetch.io" ||
@@ -417,17 +415,7 @@ export function buildBrandAssetMetadata(data = {}, options = {}) {
           siteUrl: options.assetBaseUrl || options.siteUrl,
         })
       : "");
-  // Mirrors the icon fallback above: a manual value still wins, and otherwise
-  // the logo resolves through the same proxy, so brandAssetSource:"brandfetch"
-  // describes both fields rather than only the icon.
-  const brandLogoUrl =
-    clean(data.brandLogoUrl) ||
-    (shouldUseBrandfetch
-      ? brandAssetProxyUrl(brandDomain, {
-          kind: "logo",
-          siteUrl: options.assetBaseUrl || options.siteUrl,
-        })
-      : "");
+  const brandLogoUrl = clean(data.brandLogoUrl);
   const safeBrandIconUrl =
     brandIconUrl && isAllowedBrandAssetUrl(brandIconUrl) ? brandIconUrl : "";
   const safeBrandLogoUrl =

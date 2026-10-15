@@ -9,8 +9,6 @@
  * re-exports everything below so existing imports stay unchanged.
  */
 
-import { hasEmbeddedUrlUserinfo } from "./source-url-lib.js";
-
 const GITHUB_HOST = "github.com";
 
 // GitHub usernames/orgs: alphanumeric with single internal hyphens.
@@ -18,62 +16,20 @@ const OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
 // GitHub repository names: alphanumeric plus "-", "_", and ".".
 const REPO_PATTERN = /^[A-Za-z0-9._-]+$/;
 
-// URL schemes this parser actually supports: the two web schemes plus the git
-// transports authors paste from clone dialogs ("git+https://" is normalized to
-// "https:" before parsing). Anything outside this set is rejected before the
-// checks below run, so a scheme the parser never intended to accept — ftp:,
-// file:, data: — cannot slip an embedded-credential URL past the http/https
-// userinfo guard by simply changing its scheme (#5588). Mirrors the protocol
-// allowlist `isPublicGitHubHostUrl` in `source-url-lib.js` already applies.
-const ALLOWED_URL_PROTOCOLS = new Set(["http:", "https:", "git:", "ssh:"]);
-
 // First path segments that are GitHub product surfaces, never repo owners.
-// GitHub reserves these names, so "github.com/sponsors/x" or
-// "github.com/features/copilot" is a product/marketing/auth page, not a
-// repository. Two-segment marketing URLs (features/*, enterprise/*,
-// customer-stories/*) otherwise slip through as bogus owner/repo pairs, which
-// inflates source-provenance scoring and makes the source-repo signal refresher
-// query repos that cannot exist. Keep lowercase; membership is case-folded.
-// Exported so the GitHub profile-URL classifier in `source-url-lib.js` rejects
-// the same product surfaces and the two checkers cannot drift apart.
-export const RESERVED_OWNERS = new Set([
+// GitHub reserves these, so "github.com/sponsors/x" is never a repository.
+const RESERVED_OWNERS = new Set([
   "about",
-  "account",
   "apps",
-  "business",
-  "codespaces",
   "collections",
-  "contact",
-  "customer-stories",
-  "dashboard",
-  "education",
-  "enterprise",
   "explore",
-  "features",
-  "issues",
-  "join",
-  "login",
-  "logout",
   "marketplace",
-  "new",
-  "nonprofits",
   "notifications",
-  "organizations",
   "orgs",
-  "pricing",
   "pulls",
-  "readme",
-  "search",
-  "security",
-  "sessions",
   "settings",
-  "signup",
   "sponsors",
-  "stars",
-  "team",
   "topics",
-  "trending",
-  "watching",
 ]);
 
 // Strip a single leading "www." so the www alias resolves to the bare host,
@@ -123,23 +79,15 @@ export function parseGitHubRepoUrl(value) {
 
   if (!parsed) {
     let url;
-    const parseableUrl = raw.replace(/^git\+/i, "");
     try {
       // Drop a "git+" prefix so "git+https://..." parses; "git://" and "ssh://"
       // are already valid URL schemes that keep their host and path.
-      url = new URL(parseableUrl);
+      url = new URL(raw.replace(/^git\+/i, ""));
     } catch {
       return null;
     }
-    if (!ALLOWED_URL_PROTOCOLS.has(url.protocol)) return null;
     const ownerRepo = ownerRepoFromPath(url.pathname);
     if (!ownerRepo) return null;
-    if (
-      (url.protocol === "http:" || url.protocol === "https:") &&
-      hasEmbeddedUrlUserinfo(parseableUrl)
-    ) {
-      return null;
-    }
     parsed = { host: normalizeHost(url.hostname), ...ownerRepo };
   }
 

@@ -2,16 +2,6 @@ import { useState } from "react";
 import { Send, Loader2, ChevronDown } from "lucide-react";
 import { CopyButton } from "@/components/copy-button";
 import type { OpenApiEndpoint, OpenApiParam } from "@/data/openapi";
-import { buildRequestUrl } from "@/lib/openapi-request-lib";
-import { trackEvent } from "@/lib/analytics";
-import {
-  openApiAdvancedToggleAnalyticsData,
-  openApiAdvancedToggleAnalyticsEvent,
-  openApiCopyAnalyticsData,
-  openApiCopyAnalyticsEvent,
-  openApiSendAnalyticsData,
-  openApiSendAnalyticsEvent,
-} from "@/lib/openapi-cta-events";
 import { cn } from "@/lib/utils";
 
 const METHOD_STYLES: Record<OpenApiEndpoint["method"], string> = {
@@ -34,9 +24,6 @@ export function MethodPill({ method }: { method: OpenApiEndpoint["method"] }) {
 }
 
 export function OpenApiEndpointCard({ endpoint }: { endpoint: OpenApiEndpoint }) {
-  // The request-body editor is owned here so the live-edited body flows into both
-  // the playground textarea and the copyable curl snippet (they render as siblings).
-  const [body, setBody] = useState(endpoint.body?.example ?? "");
   return (
     <article id={endpoint.id} className="scroll-mt-24 rounded-xl border border-border bg-surface">
       <header className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
@@ -99,15 +86,15 @@ export function OpenApiEndpointCard({ endpoint }: { endpoint: OpenApiEndpoint })
               <code>{endpoint.responseExample}</code>
             </pre>
           </div>
-          <CurlBlock endpoint={endpoint} body={body} />
+          <CurlBlock endpoint={endpoint} />
         </div>
-        <OpenApiPlayground endpoint={endpoint} body={body} onBodyChange={setBody} />
+        <OpenApiPlayground endpoint={endpoint} />
       </div>
     </article>
   );
 }
 
-function CurlBlock({ endpoint, body }: { endpoint: OpenApiEndpoint; body?: string }) {
+function CurlBlock({ endpoint }: { endpoint: OpenApiEndpoint }) {
   const base = "https://heyclau.de";
   const params =
     endpoint.parameters
@@ -119,23 +106,15 @@ function CurlBlock({ endpoint, body }: { endpoint: OpenApiEndpoint; body?: strin
     return ex ?? `:${name}`;
   });
   const fullUrl = `${base}${url}${params ? `?${params}` : ""}`;
-  // Prefer the live-edited body; fall back to the documented example. Editing the
-  // playground's Body textarea now visibly updates this curl payload.
-  const bodyPayload = body ?? endpoint.body?.example ?? "";
   const curl =
     endpoint.method === "GET"
       ? `curl '${fullUrl}'`
-      : `curl -X ${endpoint.method} '${fullUrl}' \\\n  -H 'content-type: application/json' \\\n  -d '${bodyPayload.replace(/\n/g, "")}'`;
+      : `curl -X ${endpoint.method} '${fullUrl}' \\\n  -H 'content-type: application/json' \\\n  -d '${endpoint.body?.example.replace(/\n/g, "") ?? ""}'`;
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
         <div className="eyebrow">curl</div>
-        <CopyButton
-          value={curl}
-          label="Copy"
-          event={openApiCopyAnalyticsEvent()}
-          eventData={openApiCopyAnalyticsData(endpoint.id, endpoint.method, "curl")}
-        />
+        <CopyButton value={curl} label="Copy" />
       </div>
       <pre className="overflow-auto rounded-md bg-background p-3 font-mono text-[11px] text-ink">
         <code>{curl}</code>
@@ -144,35 +123,19 @@ function CurlBlock({ endpoint, body }: { endpoint: OpenApiEndpoint; body?: strin
   );
 }
 
-export function OpenApiPlayground({
-  endpoint,
-  body,
-  onBodyChange,
-}: {
-  endpoint: OpenApiEndpoint;
-  body?: string;
-  onBodyChange?: (next: string) => void;
-}) {
+export function OpenApiPlayground({ endpoint }: { endpoint: OpenApiEndpoint }) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     endpoint.parameters?.forEach((p) => (init[p.name] = p.example ?? ""));
     return init;
   });
-  const [localBody, setLocalBody] = useState(endpoint.body?.example ?? "");
-  // Controlled when a parent owns the body (endpoint card); otherwise self-manage
-  // so the exported component still works standalone.
-  const bodyValue = body ?? localBody;
-  const setBody = onBodyChange ?? setLocalBody;
+  const [body, setBody] = useState(endpoint.body?.example ?? "");
   const [sending, setSending] = useState(false);
   const [response, setResponse] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const send = async () => {
-    trackEvent(
-      openApiSendAnalyticsEvent(),
-      openApiSendAnalyticsData(endpoint.id, endpoint.method, Boolean(endpoint.liveRequest)),
-    );
     setSending(true);
     setResponse(null);
     setError(null);
@@ -220,7 +183,7 @@ export function OpenApiPlayground({
         <div>
           <div className="eyebrow mb-1.5">Body</div>
           <textarea
-            value={bodyValue}
+            value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={6}
             className="w-full rounded-md border border-border bg-background p-3 font-mono text-[11px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/40"
@@ -249,12 +212,7 @@ export function OpenApiPlayground({
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <div className="eyebrow">Response</div>
-            <CopyButton
-              value={response}
-              label="Copy"
-              event={openApiCopyAnalyticsEvent()}
-              eventData={openApiCopyAnalyticsData(endpoint.id, endpoint.method, "response")}
-            />
+            <CopyButton value={response} label="Copy" />
           </div>
           <pre className="overflow-auto rounded-md border border-border bg-background p-3 font-mono text-[11px] text-ink">
             <code>{response}</code>
@@ -265,19 +223,7 @@ export function OpenApiPlayground({
         <>
           <button
             type="button"
-            onClick={() => {
-              const next = !showAdvanced;
-              trackEvent(
-                openApiAdvancedToggleAnalyticsEvent(),
-                openApiAdvancedToggleAnalyticsData(
-                  endpoint.id,
-                  endpoint.method,
-                  next,
-                  endpoint.clientExamples?.length ?? 0,
-                ),
-              );
-              setShowAdvanced(next);
-            }}
+            onClick={() => setShowAdvanced((s) => !s)}
             className="inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink"
           >
             <ChevronDown
@@ -289,21 +235,8 @@ export function OpenApiPlayground({
             <div className="space-y-2 rounded-md border border-border bg-background p-3">
               {endpoint.clientExamples.map((example) => (
                 <div key={example.label}>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <div className="text-[10px] uppercase tracking-wider text-ink-subtle">
-                      {example.label}
-                    </div>
-                    <CopyButton
-                      value={example.code}
-                      label="Copy"
-                      size="sm"
-                      event={openApiCopyAnalyticsEvent()}
-                      eventData={openApiCopyAnalyticsData(
-                        endpoint.id,
-                        endpoint.method,
-                        "client-example",
-                      )}
-                    />
+                  <div className="mb-1 text-[10px] uppercase tracking-wider text-ink-subtle">
+                    {example.label}
                   </div>
                   <pre className="overflow-auto font-mono text-[11px] text-ink">
                     <code>{example.code}</code>
@@ -316,6 +249,24 @@ export function OpenApiPlayground({
       )}
     </div>
   );
+}
+
+function buildRequestUrl(endpoint: OpenApiEndpoint, values: Record<string, string>) {
+  let path = endpoint.path.replace(/\{(\w+)\}/g, (_match, name) => {
+    const value = values[name] || endpoint.parameters?.find((p) => p.name === name)?.example;
+    return encodeURIComponent(value || "");
+  });
+
+  const params = new URLSearchParams();
+  endpoint.parameters
+    ?.filter((param) => param.in === "query")
+    .forEach((param) => {
+      const value = values[param.name] || param.example || "";
+      if (value) params.set(param.name, value);
+    });
+  const query = params.toString();
+  if (query) path = `${path}?${query}`;
+  return path;
 }
 
 function ParamInput({

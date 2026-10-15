@@ -5,27 +5,17 @@ import { BEST_LISTS, ENTRIES, type BestList, type BestPick } from "@/data/entrie
 import type { Entry } from "@/types/registry";
 import { ResourceCard } from "@/components/resource-card";
 import { ComparisonTable } from "@/components/comparison-table";
-import { compareBestInteractiveUiState } from "@/lib/compare-best-interactive-ui-lib";
+import { compareBestBannerTexts } from "@/lib/compare-best-summary";
+import {
+  compareInteractiveLinkLabel,
+  compareInteractiveSearch,
+} from "@/lib/compare-interactive-link";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { NewsletterInline } from "@/components/newsletter-inline";
 import { getBestListEditorial } from "@/data/best-list-editorial";
-import { trackEvent } from "@/lib/analytics";
-import {
-  bestDetailCompareAnalyticsData,
-  bestDetailCompareAnalyticsEvent,
-  bestDetailCompareDestination,
-  bestDetailIndexAnalyticsData,
-  bestDetailIndexAnalyticsEvent,
-  bestDetailIndexDestination,
-  bestDetailSubmitAnalyticsData,
-  bestDetailSubmitAnalyticsEvent,
-  bestDetailSubmitDestination,
-} from "@/lib/best-detail-cta-events";
 import { stringifyJsonLd } from "@/lib/json-ld";
-import { bestListItemListJsonLd } from "@/lib/best-list-jsonld-lib";
 import { absoluteUrl } from "@/lib/seo";
 import { ogImageUrl } from "@/lib/og-image";
-import { ogImageMetaTags } from "@/lib/og-meta-lib";
 import { breadcrumbScript } from "@/lib/seo-jsonld";
 import { useMemo } from "react";
 
@@ -40,11 +30,22 @@ export const Route = createFileRoute("/best/$slug")({
     const l = loaderData.list;
     const url = absoluteUrl(`/best/${params.slug}`);
     const ogImage = ogImageUrl({ title: l.title, eyebrow: "Best", description: l.seoDescription });
-    const ld = bestListItemListJsonLd(
-      l,
-      absoluteUrl,
-      (ref) => ENTRIES.find((e) => `${e.category}/${e.slug}` === ref)?.title ?? ref,
-    );
+    const ld = {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: l.title,
+      description: l.subtitle,
+      numberOfItems: l.picks.length,
+      itemListElement: l.picks.map((p, i) => {
+        const entry = ENTRIES.find((e) => `${e.category}/${e.slug}` === p.ref);
+        return {
+          "@type": "ListItem",
+          position: i + 1,
+          name: entry?.title ?? p.ref,
+          url: absoluteUrl(`/entry/${p.ref}`),
+        };
+      }),
+    };
     return {
       meta: [
         { title: `${l.seoTitle} — HeyClaude` },
@@ -52,7 +53,13 @@ export const Route = createFileRoute("/best/$slug")({
         { property: "og:title", content: l.title },
         { property: "og:description", content: l.seoDescription },
         { property: "og:url", content: url },
-        ...ogImageMetaTags(ogImage, "article"),
+        { property: "og:image", content: ogImage },
+        { property: "og:image:type", content: "image/png" },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { property: "og:type", content: "article" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: ogImage },
       ],
       links: [{ rel: "canonical", href: url }],
       scripts: [
@@ -65,32 +72,16 @@ export const Route = createFileRoute("/best/$slug")({
       ],
     };
   },
-  notFoundComponent: BestNotFound,
-  component: BestDetail,
-});
-
-function BestNotFound() {
-  const destination = bestDetailIndexDestination("best");
-  return (
+  notFoundComponent: () => (
     <div className="mx-auto max-w-2xl px-6 py-24 text-center">
       <h1 className="font-display text-3xl text-ink">List not found</h1>
-      {destination ? (
-        <Link
-          to={destination.to}
-          onClick={() =>
-            trackEvent(
-              bestDetailIndexAnalyticsEvent(),
-              bestDetailIndexAnalyticsData(null, null, "not-found"),
-            )
-          }
-          className="mt-4 inline-block text-ink-muted hover:text-ink"
-        >
-          ← Back to all lists
-        </Link>
-      ) : null}
+      <Link to="/best" className="mt-4 inline-block text-ink-muted hover:text-ink">
+        ← Back to all lists
+      </Link>
     </div>
-  );
-}
+  ),
+  component: BestDetail,
+});
 
 function BestDetail() {
   const { list } = Route.useLoaderData() as { list: BestList };
@@ -106,27 +97,18 @@ function BestDetail() {
     .filter((p): p is Resolved => p !== null);
 
   const compareEntries = useMemo(() => resolved.slice(0, 5).map((p) => p.entry), [resolved]);
-  const compareUi = useMemo(() => compareBestInteractiveUiState(compareEntries), [compareEntries]);
-  const indexDestination = bestDetailIndexDestination("best");
-  const submitDestination = bestDetailSubmitDestination("submit");
+  const compareBannerTexts = useMemo(
+    () => compareBestBannerTexts(compareEntries),
+    [compareEntries],
+  );
+  const interactiveCompareSearch = useMemo(
+    () => compareInteractiveSearch(compareEntries),
+    [compareEntries],
+  );
 
   return (
     <PageContainer className="py-12">
-      <Breadcrumbs
-        home
-        items={[
-          {
-            label: "Best lists",
-            to: indexDestination?.to ?? "/best",
-            onClick: () =>
-              trackEvent(
-                bestDetailIndexAnalyticsEvent(),
-                bestDetailIndexAnalyticsData(list.slug, resolved.length, "breadcrumb"),
-              ),
-          },
-          { label: list.title },
-        ]}
-      />
+      <Breadcrumbs home items={[{ label: "Best lists", to: "/best" }, { label: list.title }]} />
 
       <div className="mt-6 eyebrow">
         {list.eyebrow} · {list.category} · {resolved.length} picks
@@ -170,16 +152,16 @@ function BestDetail() {
         </>
       )}
 
-      {compareUi?.showCompareSection ? (
+      {resolved.length >= 2 && (
         <section className="mt-10">
           <h2 className="h-display-2 text-ink">Compared at a glance</h2>
           <p className="mt-2 max-w-3xl text-sm text-ink-muted">
             The top {Math.min(resolved.length, 5)} picks side by side on trust, install, platform
             support, and disclosed notes — full rationale for each below.
           </p>
-          {compareUi.bannerTexts.length > 0 ? (
+          {compareBannerTexts.length > 0 ? (
             <div className="mt-4 space-y-1.5">
-              {compareUi.bannerTexts.map((text) => (
+              {compareBannerTexts.map((text) => (
                 <p key={text} className="text-sm text-ink-muted">
                   {text}
                 </p>
@@ -189,35 +171,18 @@ function BestDetail() {
           <div className="mt-5">
             <ComparisonTable entries={compareEntries} showNextActions />
           </div>
-          {compareUi.interactiveSearch
-            ? (() => {
-                const destination = bestDetailCompareDestination(compareUi.interactiveSearch.ids);
-                if (!destination) return null;
-                return (
-                  <Link
-                    to={destination.to}
-                    search={destination.search}
-                    onClick={() =>
-                      trackEvent(
-                        bestDetailCompareAnalyticsEvent(),
-                        bestDetailCompareAnalyticsData(
-                          list.slug,
-                          resolved.length,
-                          compareEntries.length,
-                          true,
-                        ),
-                      )
-                    }
-                    className="mt-4 inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    {compareUi.interactiveLinkLabel}
-                  </Link>
-                );
-              })()
-            : null}
+          {interactiveCompareSearch ? (
+            <Link
+              to="/compare"
+              search={interactiveCompareSearch}
+              className="mt-4 inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {compareInteractiveLinkLabel(compareEntries.length)}
+            </Link>
+          ) : null}
         </section>
-      ) : null}
+      )}
 
       <ol className="mt-10 flex flex-col gap-6 stagger-children">
         {resolved.map((p: Resolved, i: number) => (
@@ -229,7 +194,7 @@ function BestDetail() {
               {String(i + 1).padStart(2, "0")}
             </div>
             <div className="flex flex-col gap-3">
-              <ResourceCard entry={p.entry} variant="grid" analyticsSurface="best-collection" />
+              <ResourceCard entry={p.entry} variant="grid" />
               <div className="rounded-lg border border-border bg-surface-2 p-4 text-sm">
                 <div className="eyebrow mb-1 text-accent-ink dark:text-accent">
                   Why it made the cut
@@ -252,20 +217,12 @@ function BestDetail() {
           Missing a pick? Propose an edit to this list — every change goes through the same review
           queue as new entries.
         </p>
-        {submitDestination ? (
-          <Link
-            to={submitDestination.to}
-            onClick={() =>
-              trackEvent(
-                bestDetailSubmitAnalyticsEvent(),
-                bestDetailSubmitAnalyticsData(list.slug, resolved.length, list.category),
-              )
-            }
-            className="inline-flex h-9 items-center rounded-md bg-ink px-3 text-sm font-medium text-background hover:bg-ink/90"
-          >
-            Suggest a pick
-          </Link>
-        ) : null}
+        <Link
+          to="/submit"
+          className="inline-flex h-9 items-center rounded-md bg-ink px-3 text-sm font-medium text-background hover:bg-ink/90"
+        >
+          Suggest a pick
+        </Link>
       </div>
 
       <div className="mt-12">

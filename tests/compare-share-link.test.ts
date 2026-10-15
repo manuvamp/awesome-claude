@@ -3,7 +3,6 @@ import type { Entry } from "@/types/registry";
 import {
   comparePageSharePath,
   comparePageShareUrl,
-  comparePageShareUrlForWindow,
   comparePageShareUrlFromEntries,
 } from "@/lib/compare-share-link";
 
@@ -55,14 +54,5 @@ describe("compare share link", () => {
     expect(comparePageShareUrlFromEntries([], "https://heyclaude.dev")).toBe(
       "https://heyclaude.dev/compare",
     );
-  });
-
-  it("builds window-backed compare page share URLs without an explicit origin", () => {
-    expect(
-      comparePageShareUrlForWindow([
-        entry({ category: "skills", slug: "alpha" }),
-      ]),
-    ).toBe("/compare?ids=skills%2Falpha");
-    expect(comparePageShareUrlForWindow([])).toBe("/compare");
   });
 });

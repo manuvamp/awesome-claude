@@ -1,14 +1,27 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { Kbd } from "@/components/badges";
-import { trackEvent } from "@/lib/analytics";
-import {
-  peekHintDismissAnalyticsData,
-  peekHintDismissAnalyticsEvent,
-} from "@/lib/a11y-chrome-cta-events";
-import { defaultLocalStorage } from "@/lib/dossier-prefs-lib";
-import { dismissPeekHint, peekHintDismissed } from "@/lib/peek-hint-lib";
 import { cn } from "@/lib/utils";
+
+const HINT_KEY = "hc.hint.peek.v1";
+
+function alreadyDismissed(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(HINT_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+
+function dismiss() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(HINT_KEY, "1");
+  } catch {
+    /* noop */
+  }
+}
 
 /**
  * One-time coach mark teaching the global `P` shortcut. Renders inside the
@@ -21,7 +34,7 @@ export function PeekHint({ hovered, className }: { hovered: boolean; className?:
 
   // Defer the eligibility check to the client (avoid SSR/hydration mismatch).
   React.useEffect(() => {
-    setEligible(!peekHintDismissed(defaultLocalStorage()));
+    setEligible(!alreadyDismissed());
   }, []);
 
   React.useEffect(() => {
@@ -35,15 +48,13 @@ export function PeekHint({ hovered, className }: { hovered: boolean; className?:
     const hideT = window.setTimeout(() => {
       setVisible(false);
       setEligible(false);
-      dismissPeekHint(defaultLocalStorage());
-      trackEvent(peekHintDismissAnalyticsEvent(), peekHintDismissAnalyticsData("timeout"));
+      dismiss();
     }, 8000);
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "p" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         setVisible(false);
         setEligible(false);
-        dismissPeekHint(defaultLocalStorage());
-        trackEvent(peekHintDismissAnalyticsEvent(), peekHintDismissAnalyticsData("hotkey"));
+        dismiss();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -74,8 +85,7 @@ export function PeekHint({ hovered, className }: { hovered: boolean; className?:
           e.stopPropagation();
           setVisible(false);
           setEligible(false);
-          dismissPeekHint(defaultLocalStorage());
-          trackEvent(peekHintDismissAnalyticsEvent(), peekHintDismissAnalyticsData("button"));
+          dismiss();
         }}
         aria-label="Dismiss peek shortcut hint"
         className="inline-flex h-4 w-4 items-center justify-center rounded text-ink-subtle hover:text-ink"

@@ -10,24 +10,9 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { NewsletterInline } from "@/components/newsletter-inline";
 import { HubHighlights, HubSignalStats } from "@/components/hub-highlights";
 import { hubHighlights, hubStats, trustPosture } from "@/lib/hub-highlights";
-import { trackEvent } from "@/lib/analytics";
-import {
-  platformHubBrowseAnalyticsData,
-  platformHubBrowseAnalyticsEvent,
-  platformHubBrowseDestination,
-  platformHubNotFoundEgressAnalyticsData,
-  platformHubNotFoundEgressAnalyticsEvent,
-  platformHubNotFoundEgressDestination,
-  platformHubSectionAnalyticsData,
-  platformHubSectionAnalyticsEvent,
-  platformHubSectionDestination,
-} from "@/lib/directory-hub-cta-events";
 import { stringifyJsonLd } from "@/lib/json-ld";
-import { breadcrumbListJsonLd } from "@/lib/breadcrumb-jsonld-lib";
-import { platformItemListJsonLd } from "@/lib/platform-itemlist-jsonld-lib";
 import { absoluteUrl } from "@/lib/seo";
 import { ogImageUrl } from "@/lib/og-image";
-import { ogImageMetaTags } from "@/lib/og-meta-lib";
 
 const PLATFORM_IDS = new Set(Object.keys(PLATFORM_LABEL));
 
@@ -47,24 +32,41 @@ export const Route = createFileRoute("/for/$platform")({
     const title = `Claude resources for ${label} — HeyClaude`;
     const description = `${entries.length} source-backed Claude resources that work with ${label}: MCP servers, agents, skills, hooks, commands, and rules, curated in HeyClaude.`;
     const ogImage = ogImageUrl({ title: `Claude for ${label}`, eyebrow: "Platform", description });
-    const itemList = platformItemListJsonLd(label, description, entries, absoluteUrl);
-    const breadcrumbs = breadcrumbListJsonLd([
-      { name: "Directory", item: absoluteUrl("/browse") },
-      { name: "Platforms", item: absoluteUrl("/for") },
-      { name: label, item: url },
-    ]);
+    const itemList = {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: `Claude resources for ${label}`,
+      description,
+      numberOfItems: entries.length,
+      itemListElement: entries.slice(0, 30).map((e, i) => ({
+        "@type": "ListItem",
+        position: i + 1,
+        name: e.title,
+        url: absoluteUrl(`/entry/${e.category}/${e.slug}`),
+      })),
+    };
+    const breadcrumbs = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Directory", item: absoluteUrl("/browse") },
+        { "@type": "ListItem", position: 2, name: "Platforms", item: absoluteUrl("/for") },
+        { "@type": "ListItem", position: 3, name: label, item: url },
+      ],
+    };
     return {
       meta: [
         { title },
         { name: "description", content: description },
-        // Thin platform hubs (fewer than 2 entries) are excluded from the sitemap and
-        // noindexed, matching the policy already applied by the sibling routes
-        // for.$platform.$category.tsx and tags.$tag.tsx.
-        ...(entries.length < 2 ? [{ name: "robots", content: "noindex, follow" }] : []),
         { property: "og:title", content: title },
         { property: "og:description", content: description },
         { property: "og:url", content: url },
-        ...ogImageMetaTags(ogImage),
+        { property: "og:image", content: ogImage },
+        { property: "og:image:type", content: "image/png" },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: ogImage },
       ],
       links: [{ rel: "canonical", href: url }],
       scripts: [
@@ -74,29 +76,18 @@ export const Route = createFileRoute("/for/$platform")({
     };
   },
   component: PlatformPage,
-  notFoundComponent: () => {
-    const destination = platformHubNotFoundEgressDestination("platforms");
-    return (
-      <div className="mx-auto max-w-2xl px-6 py-24 text-center">
-        <h1 className="h-display-2 text-ink">Platform not found</h1>
-        <p className="mt-3 text-sm text-ink-muted">That platform isn't tracked yet.</p>
-        {destination ? (
-          <Link
-            to={destination.to}
-            className="mt-6 inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
-            onClick={() =>
-              trackEvent(
-                platformHubNotFoundEgressAnalyticsEvent(),
-                platformHubNotFoundEgressAnalyticsData(),
-              )
-            }
-          >
-            All platforms <ArrowRight className="h-4 w-4" />
-          </Link>
-        ) : null}
-      </div>
-    );
-  },
+  notFoundComponent: () => (
+    <div className="mx-auto max-w-2xl px-6 py-24 text-center">
+      <h1 className="h-display-2 text-ink">Platform not found</h1>
+      <p className="mt-3 text-sm text-ink-muted">That platform isn't tracked yet.</p>
+      <Link
+        to="/for"
+        className="mt-6 inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
+      >
+        All platforms <ArrowRight className="h-4 w-4" />
+      </Link>
+    </div>
+  ),
 });
 
 function PlatformPage() {
@@ -135,25 +126,13 @@ function PlatformPage() {
           {posture.trusted > 0 ? <> {posture.pct}% sit in the trusted tier.</> : null}
         </p>
         <div className="mt-6">
-          {(() => {
-            const destination = platformHubBrowseDestination(platform);
-            if (!destination) return null;
-            return (
-              <Link
-                to={destination.to}
-                search={destination.search}
-                onClick={() =>
-                  trackEvent(
-                    platformHubBrowseAnalyticsEvent(),
-                    platformHubBrowseAnalyticsData(platform, all.length),
-                  )
-                }
-                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
-              >
-                Browse &amp; filter all {label} resources <ArrowRight className="h-4 w-4" />
-              </Link>
-            );
-          })()}
+          <Link
+            to="/browse"
+            search={{ platform }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-4 font-medium text-background hover:opacity-90"
+          >
+            Browse &amp; filter all {label} resources <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
       </header>
 
@@ -162,53 +141,25 @@ function PlatformPage() {
         caption={`Standout ${label}-compatible resources, picked from their own metadata — trust tier, provenance, documentation, and recency.`}
       />
 
-      <HubSignalStats
-        stats={stats}
-        total={all.length}
-        surface="platform-hub"
-        browseBase={{ platform }}
-      />
+      <HubSignalStats stats={stats} total={all.length} />
 
-      {sections.map((section, rowIndex) => (
+      {sections.map((section) => (
         <section key={section.category.id} className="mt-12">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="h-display-2 text-ink">
               {categoryLabels[section.category.id] ?? section.category.label}
             </h2>
-            {(() => {
-              const destination = platformHubSectionDestination(platform, section.category.id);
-              if (!destination) return null;
-              return (
-                <Link
-                  to={destination.to}
-                  params={destination.params}
-                  onClick={() =>
-                    trackEvent(
-                      platformHubSectionAnalyticsEvent(),
-                      platformHubSectionAnalyticsData(
-                        platform,
-                        section.category.id,
-                        section.entries.length,
-                        rowIndex,
-                        sections.length,
-                      ),
-                    )
-                  }
-                  className="story-link text-sm font-medium text-ink"
-                >
-                  All {categoryLabels[section.category.id] ?? section.category.label} for {label} →
-                </Link>
-              );
-            })()}
+            <Link
+              to="/for/$platform/$category"
+              params={{ platform, category: section.category.id }}
+              className="story-link text-sm font-medium text-ink"
+            >
+              All {categoryLabels[section.category.id] ?? section.category.label} for {label} →
+            </Link>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {section.entries.map((e) => (
-              <ResourceCard
-                key={`${e.category}/${e.slug}`}
-                entry={e}
-                variant="grid"
-                analyticsSurface="platform-hub"
-              />
+              <ResourceCard key={`${e.category}/${e.slug}`} entry={e} variant="grid" />
             ))}
           </div>
         </section>

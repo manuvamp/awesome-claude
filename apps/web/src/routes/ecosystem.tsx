@@ -4,49 +4,6 @@ import { ArrowRight, Rss } from "lucide-react";
 import { INTEGRATIONS } from "@/data/integrations";
 import { IntegrationCard } from "@/components/integration-card";
 import { PageContainer } from "@/components/page-container";
-import { trackEvent } from "@/lib/analytics";
-import {
-  ecosystemApiDocsAnalyticsData,
-  ecosystemApiDocsAnalyticsEvent,
-  ecosystemIntegrationCardAnalyticsData,
-  ecosystemIntegrationCardAnalyticsEvent,
-  ecosystemKindFilterAnalyticsData,
-  ecosystemKindFilterAnalyticsEvent,
-  ecosystemMatrixCellAnalyticsData,
-  ecosystemMatrixCellAnalyticsEvent,
-  ecosystemMatrixClientFocusAnalyticsData,
-  ecosystemMatrixClientFocusAnalyticsEvent,
-  ecosystemMatrixCsvAnalyticsData,
-  ecosystemMatrixCsvAnalyticsEvent,
-  ecosystemMatrixDocAnalyticsData,
-  ecosystemMatrixDocAnalyticsEvent,
-  ecosystemMatrixFocusClearAnalyticsData,
-  ecosystemMatrixFocusClearAnalyticsEvent,
-  ecosystemMatrixSnippetCopyAnalyticsData,
-  ecosystemMatrixSnippetCopyAnalyticsEvent,
-  ecosystemMatrixSupportFocusAnalyticsData,
-  ecosystemMatrixSupportFocusAnalyticsEvent,
-  ecosystemFeedPathAnalyticsData,
-  ecosystemFeedPathAnalyticsEvent,
-  ecosystemFeedUrlCopyAnalyticsData,
-  ecosystemFeedUrlCopyAnalyticsEvent,
-  ecosystemFeedKey,
-  ecosystemSetupClientAnalyticsData,
-  ecosystemSetupClientAnalyticsEvent,
-  ecosystemSetupDocAnalyticsData,
-  ecosystemSetupDocAnalyticsEvent,
-  ecosystemQuickStartCopyAnalyticsData,
-  ecosystemQuickStartCopyAnalyticsEvent,
-  ecosystemSectionAnalyticsData,
-  ecosystemSectionAnalyticsEvent,
-  ecosystemHarnessBrowseAnalyticsData,
-  ecosystemHarnessBrowseAnalyticsEvent,
-  ecosystemPageStatAnalyticsData,
-  ecosystemPageStatAnalyticsEvent,
-  ecosystemPageStatDestination,
-  type EcosystemQuickStartAction,
-  type EcosystemPageStatId,
-} from "@/lib/ecosystem-page-cta-events";
 import {
   CompatibilityMatrix,
   type MatrixRow,
@@ -62,7 +19,6 @@ import { CopyButton } from "@/components/copy-button";
 import { CountUp } from "@/components/count-up";
 import { cn } from "@/lib/utils";
 import { stringifyJsonLd } from "@/lib/json-ld";
-import { ecosystemIntegrationsJsonLd } from "@/lib/ecosystem-jsonld-lib";
 import { absoluteUrl } from "@/lib/seo";
 
 const CLIENTS = [
@@ -231,27 +187,19 @@ const SUB_NAV = [
   { id: "sponsors", label: "Sponsors" },
 ];
 
-const QUICK_STARTS: {
-  label: string;
-  value: string;
-  action: EcosystemQuickStartAction;
-}[] = [
-  {
-    label: "Pin manifest",
-    value: "curl https://heyclau.de/api/registry/manifest",
-    action: "manifest-pin",
-  },
-  { label: "Run MCP", value: "npx -y @heyclaude/mcp", action: "mcp-run" },
-  {
-    label: "Install Raycast",
-    value: "raycast://extensions/jsonbored/heyclaude",
-    action: "raycast-install",
-  },
-];
-
 export const Route = createFileRoute("/ecosystem")({
   head: () => {
-    const ld = ecosystemIntegrationsJsonLd(INTEGRATIONS, absoluteUrl);
+    const ld = {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: "HeyClaude integrations",
+      itemListElement: INTEGRATIONS.map((it, i) => ({
+        "@type": "ListItem",
+        position: i + 1,
+        name: it.name,
+        url: absoluteUrl(`/integrations/${it.slug}`),
+      })),
+    };
     return {
       meta: [
         { title: "Ecosystem — HeyClaude" },
@@ -293,12 +241,6 @@ function EcosystemPage() {
         </div>
         <Link
           to="/api-docs"
-          onClick={() =>
-            trackEvent(
-              ecosystemApiDocsAnalyticsEvent(),
-              ecosystemApiDocsAnalyticsData(INTEGRATIONS.length, live),
-            )
-          }
           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-ink px-3 text-sm font-medium text-background hover:bg-ink/90"
         >
           Build on the registry <ArrowRight className="h-3.5 w-3.5" />
@@ -307,29 +249,13 @@ function EcosystemPage() {
 
       {/* Live stats */}
       <div className="mt-6 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4">
-        <Stat
-          label="Entries indexed"
-          value={<CountUp value={entries} />}
-          statId="entries"
-          count={entries}
-        />
-        <Stat
-          label="Harnesses supported"
-          value={<CountUp value={harnessCount} />}
-          statId="harnesses"
-          count={harnessCount}
-        />
-        <Stat
-          label="Integrations live"
-          value={<CountUp value={live} />}
-          statId="integrations"
-          count={live}
-        />
+        <Stat label="Entries indexed" value={<CountUp value={entries} />} />
+        <Stat label="Harnesses supported" value={<CountUp value={harnessCount} />} />
+        <Stat label="Integrations live" value={<CountUp value={live} />} />
         <Stat
           label="Last build"
           value={new Date(REGISTRY_GENERATED_AT).toISOString().slice(0, 16).replace("T", " ")}
           mono
-          statId="last-build"
         />
       </div>
 
@@ -351,67 +277,7 @@ function EcosystemPage() {
         title="Platform compatibility"
         subtitle="What each client supports natively, via adapter, or with a manual copy step. Click any cell with a glyph button for the exact snippet."
       >
-        <CompatibilityMatrix
-          clients={CLIENTS}
-          rows={MATRIX}
-          details={CELL_DETAILS}
-          onCellClick={(clientId, support, rowIndex, columnIndex, capabilityCount, clientCount) =>
-            trackEvent(
-              ecosystemMatrixCellAnalyticsEvent(),
-              ecosystemMatrixCellAnalyticsData(
-                clientId,
-                support,
-                rowIndex,
-                columnIndex,
-                capabilityCount,
-                clientCount,
-              ),
-            )
-          }
-          onClientFocusClick={(clientId, active, clientCount) =>
-            trackEvent(
-              ecosystemMatrixClientFocusAnalyticsEvent(),
-              ecosystemMatrixClientFocusAnalyticsData(clientId, active, clientCount),
-            )
-          }
-          onSupportFocusClick={(support, active, clientCount) =>
-            trackEvent(
-              ecosystemMatrixSupportFocusAnalyticsEvent(),
-              ecosystemMatrixSupportFocusAnalyticsData(support, active, clientCount),
-            )
-          }
-          onFocusClearClick={(hadClientFocus, hadSupportFocus) =>
-            trackEvent(
-              ecosystemMatrixFocusClearAnalyticsEvent(),
-              ecosystemMatrixFocusClearAnalyticsData(hadClientFocus, hadSupportFocus),
-            )
-          }
-          onCsvDownloadClick={(capabilityCount, clientCount) =>
-            trackEvent(
-              ecosystemMatrixCsvAnalyticsEvent(),
-              ecosystemMatrixCsvAnalyticsData(capabilityCount, clientCount),
-            )
-          }
-          onDocClick={(clientId, support, rowIndex, columnIndex) =>
-            trackEvent(
-              ecosystemMatrixDocAnalyticsEvent(),
-              ecosystemMatrixDocAnalyticsData(clientId, support, rowIndex, columnIndex),
-            )
-          }
-          onSnippetCopy={(clientId, support, rowIndex, columnIndex, capabilityCount, clientCount) =>
-            trackEvent(
-              ecosystemMatrixSnippetCopyAnalyticsEvent(),
-              ecosystemMatrixSnippetCopyAnalyticsData(
-                clientId,
-                support,
-                rowIndex,
-                columnIndex,
-                capabilityCount,
-                clientCount,
-              ),
-            )
-          }
-        />
+        <CompatibilityMatrix clients={CLIENTS} rows={MATRIX} details={CELL_DETAILS} />
       </Section>
 
       {/* Harness coverage */}
@@ -420,20 +286,7 @@ function EcosystemPage() {
         title="Harness coverage"
         subtitle="Share of registry entries compatible with each harness. Click any card to browse just that harness."
       >
-        <HarnessCoverage
-          onBrowseClick={(platformId, entryCount, coveragePct, rowIndex, harnessCount) =>
-            trackEvent(
-              ecosystemHarnessBrowseAnalyticsEvent(),
-              ecosystemHarnessBrowseAnalyticsData(
-                platformId,
-                entryCount,
-                coveragePct,
-                rowIndex,
-                harnessCount,
-              ),
-            )
-          }
-        />
+        <HarnessCoverage />
       </Section>
 
       {/* Drop-in setup */}
@@ -442,20 +295,7 @@ function EcosystemPage() {
         title="Drop-in setup"
         subtitle="Pick your client. Copy the config. Verify with one command."
       >
-        <DropInSetup
-          onClientClick={(clientId, surfaceType, rowIndex, clientCount) =>
-            trackEvent(
-              ecosystemSetupClientAnalyticsEvent(),
-              ecosystemSetupClientAnalyticsData(clientId, surfaceType, rowIndex, clientCount),
-            )
-          }
-          onDocClick={(clientId, surfaceType, destination) =>
-            trackEvent(
-              ecosystemSetupDocAnalyticsEvent(),
-              ecosystemSetupDocAnalyticsData(clientId, surfaceType, destination),
-            )
-          }
-        />
+        <DropInSetup />
       </Section>
 
       {/* Adapter feeds */}
@@ -490,16 +330,12 @@ function EcosystemPage() {
             </p>
           </div>
           <div className="grid w-full max-w-md gap-2">
-            {QUICK_STARTS.map((item, rowIndex) => (
-              <QuickStart
-                key={item.action}
-                label={item.label}
-                value={item.value}
-                action={item.action}
-                rowIndex={rowIndex}
-                quickStartCount={QUICK_STARTS.length}
-              />
-            ))}
+            <QuickStart
+              label="Pin manifest"
+              value="curl https://heyclau.de/api/registry/manifest"
+            />
+            <QuickStart label="Run MCP" value="npx -y @heyclaude/mcp" />
+            <QuickStart label="Install Raycast" value="raycast://extensions/jsonbored/heyclaude" />
           </div>
         </div>
       </section>
@@ -534,16 +370,10 @@ function SubNav() {
       className="sticky top-14 z-30 -mx-4 mt-8 border-y border-border bg-background/85 px-4 backdrop-blur sm:-mx-6 sm:px-6"
     >
       <div className="flex gap-1 overflow-x-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {SUB_NAV.map((s, rowIndex) => (
+        {SUB_NAV.map((s) => (
           <a
             key={s.id}
             href={`#${s.id}`}
-            onClick={() =>
-              trackEvent(
-                ecosystemSectionAnalyticsEvent(),
-                ecosystemSectionAnalyticsData(s.id, rowIndex, SUB_NAV.length),
-              )
-            }
             className={cn(
               "shrink-0 rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-200 ease-out",
               active === s.id
@@ -602,33 +432,14 @@ function IntegrationsGrid() {
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
-        <Chip
-          active={kind === "all"}
-          onClick={() => {
-            setKind("all");
-            trackEvent(
-              ecosystemKindFilterAnalyticsEvent(),
-              ecosystemKindFilterAnalyticsData("all", INTEGRATIONS.length),
-            );
-          }}
-          count={INTEGRATIONS.length}
-        >
+        <Chip active={kind === "all"} onClick={() => setKind("all")} count={INTEGRATIONS.length}>
           All
         </Chip>
         {kinds.map((k) => (
           <Chip
             key={k}
             active={kind === k}
-            onClick={() => {
-              setKind(k);
-              trackEvent(
-                ecosystemKindFilterAnalyticsEvent(),
-                ecosystemKindFilterAnalyticsData(
-                  k,
-                  INTEGRATIONS.filter((i) => i.kind === k).length,
-                ),
-              );
-            }}
+            onClick={() => setKind(k)}
             count={INTEGRATIONS.filter((i) => i.kind === k).length}
           >
             {KIND_LABEL[k] ?? k}
@@ -636,24 +447,8 @@ function IntegrationsGrid() {
         ))}
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {list.map((it, rowIndex) => (
-          <IntegrationCard
-            key={it.slug}
-            integration={it}
-            onNavigate={() =>
-              trackEvent(
-                ecosystemIntegrationCardAnalyticsEvent(),
-                ecosystemIntegrationCardAnalyticsData(
-                  it.slug,
-                  rowIndex,
-                  list.length,
-                  kind,
-                  it.status,
-                  it.kind,
-                ),
-              )
-            }
-          />
+        {list.map((it) => (
+          <IntegrationCard key={it.slug} integration={it} />
         ))}
       </div>
     </>
@@ -705,7 +500,7 @@ function AdapterFeeds() {
         <span>SHA-256</span>
         <span className="text-right">Copy</span>
       </div>
-      {ECOSYSTEM_FEEDS.map((f, rowIndex) => (
+      {ECOSYSTEM_FEEDS.map((f) => (
         <div
           key={f.path}
           className="grid grid-cols-1 gap-2 border-b border-border px-5 py-3 text-sm last:border-0 md:grid-cols-[1.6fr_2fr_120px_90px_140px_80px] md:items-center md:gap-4"
@@ -716,17 +511,6 @@ function AdapterFeeds() {
               href={f.path}
               target="_blank"
               rel="noreferrer"
-              onClick={() =>
-                trackEvent(
-                  ecosystemFeedPathAnalyticsEvent(),
-                  ecosystemFeedPathAnalyticsData(
-                    ecosystemFeedKey(f.path),
-                    f.contentType,
-                    rowIndex,
-                    ECOSYSTEM_FEEDS.length,
-                  ),
-                )
-              }
               className="truncate font-mono text-xs text-ink hover:underline"
             >
               {f.path}
@@ -753,18 +537,7 @@ function AdapterFeeds() {
           </span>
           <code className="truncate font-mono text-xs text-ink-muted">{f.sha256}</code>
           <div className="flex justify-end">
-            <CopyButton
-              value={`https://heyclau.de${f.path}`}
-              label="Copy URL"
-              size="sm"
-              event={ecosystemFeedUrlCopyAnalyticsEvent()}
-              eventData={ecosystemFeedUrlCopyAnalyticsData(
-                ecosystemFeedKey(f.path),
-                f.contentType,
-                rowIndex,
-                ECOSYSTEM_FEEDS.length,
-              )}
-            />
+            <CopyButton value={`https://heyclau.de${f.path}`} label="Copy URL" size="sm" />
           </div>
         </div>
       ))}
@@ -772,59 +545,21 @@ function AdapterFeeds() {
   );
 }
 
-function QuickStart({
-  label,
-  value,
-  action,
-  rowIndex,
-  quickStartCount,
-}: {
-  label: string;
-  value: string;
-  action: EcosystemQuickStartAction;
-  rowIndex: number;
-  quickStartCount: number;
-}) {
+function QuickStart({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5">
       <span className="w-[88px] shrink-0 font-mono text-[10px] uppercase tracking-wider text-ink-subtle">
         {label}
       </span>
       <code className="flex-1 truncate font-mono text-[11px] text-ink">{value}</code>
-      <CopyButton
-        value={value}
-        label="Copy"
-        size="sm"
-        event={ecosystemQuickStartCopyAnalyticsEvent()}
-        eventData={ecosystemQuickStartCopyAnalyticsData(action, rowIndex, quickStartCount)}
-      />
+      <CopyButton value={value} label="Copy" size="sm" />
     </div>
   );
 }
 
-function Stat({
-  label,
-  value,
-  mono,
-  statId,
-  count,
-}: {
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-  statId: EcosystemPageStatId;
-  count?: number;
-}) {
-  const destination = ecosystemPageStatDestination(statId);
+function Stat({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
-    <Link
-      to={destination.to}
-      hash={destination.hash}
-      onClick={() =>
-        trackEvent(ecosystemPageStatAnalyticsEvent(), ecosystemPageStatAnalyticsData(statId, count))
-      }
-      className="block bg-surface p-5 transition-colors duration-200 ease-out hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
-    >
+    <div className="bg-surface p-5">
       <div className="flex items-center justify-between">
         <span className="h-1.5 w-1.5 rounded-full bg-trust-trusted" />
         <span className="font-mono text-[11px] text-ink-subtle">{label}</span>
@@ -837,6 +572,6 @@ function Stat({
       >
         {value}
       </div>
-    </Link>
+    </div>
   );
 }

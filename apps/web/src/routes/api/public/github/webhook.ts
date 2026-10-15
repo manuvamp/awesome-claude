@@ -14,15 +14,22 @@ import { createApiFileRoute } from "@/lib/api/file-route";
 
 import { BodyTooLargeError, readRequestTextWithinLimit } from "@/lib/api-security";
 import { getEnvString } from "@/lib/cloudflare-env.server";
-import { classifyRegistryPath, type RegistryEvent } from "@/lib/registry-event-classify-lib";
-import { timingSafeStringEqual, toHex } from "@/lib/webhook-signature-lib";
 
 const ALLOWED_REPO = "jsonbored/awesome-claude";
 const ALLOWED_BRANCH = "main";
 const CACHE_KEY = "https://heyclau.de/internal/alerts-cache";
 export const GITHUB_WEBHOOK_BODY_LIMIT_BYTES = 1024 * 1024;
 
-export type { RegistryEvent };
+export interface RegistryEvent {
+  id: string;
+  kind: "entry" | "changelog" | "validator" | "unknown";
+  category?: string;
+  slug?: string;
+  action: "added" | "updated" | "removed";
+  commit: string;
+  date: string;
+  title?: string;
+}
 
 interface PushFile {
   added?: string[];
@@ -31,6 +38,19 @@ interface PushFile {
   id?: string;
   timestamp?: string;
   message?: string;
+}
+
+function toHex(buffer: ArrayBuffer) {
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeStringEqual(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return diff === 0;
 }
 
 async function verify(secret: string, signature: string | null, body: string): Promise<boolean> {
@@ -45,6 +65,34 @@ async function verify(secret: string, signature: string | null, body: string): P
   const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
   const expected = `sha256=${toHex(digest)}`;
   return timingSafeStringEqual(signature, expected);
+}
+
+function classify(
+  path: string,
+  action: "added" | "updated" | "removed",
+  commit: string,
+  date: string,
+): RegistryEvent | null {
+  // content/<category>/<slug>.mdx
+  const m = path.match(/^content\/([^/]+)\/([^/]+)\.(?:mdx?|json)$/);
+  if (m) {
+    return {
+      id: `${commit}:${path}`,
+      kind: "entry",
+      category: m[1],
+      slug: m[2],
+      action,
+      commit,
+      date,
+    };
+  }
+  if (/^content\/changelog/.test(path) || /registry-changelog\.json$/.test(path)) {
+    return { id: `${commit}:${path}`, kind: "changelog", action, commit, date };
+  }
+  if (/validators/.test(path)) {
+    return { id: `${commit}:${path}`, kind: "validator", action, commit, date };
+  }
+  return null;
 }
 
 async function appendEvents(events: RegistryEvent[]): Promise<void> {
@@ -108,7 +156,7 @@ export async function handleGithubWebhookPost(request: Request) {
   }
 
   const repo = (payload.repository as { full_name?: string } | undefined)?.full_name;
-  if (repo !== ALLOWED_REPO) {
+  if (repo && repo !== ALLOWED_REPO) {
     return new Response("Unknown repo", { status: 403 });
   }
 
@@ -124,15 +172,15 @@ export async function handleGithubWebhookPost(request: Request) {
       const commit = c.id ?? "unknown";
       const date = c.timestamp ?? new Date().toISOString();
       for (const p of c.added ?? []) {
-        const ev = classifyRegistryPath(p, "added", commit, date);
+        const ev = classify(p, "added", commit, date);
         if (ev) events.push(ev);
       }
       for (const p of c.modified ?? []) {
-        const ev = classifyRegistryPath(p, "updated", commit, date);
+        const ev = classify(p, "updated", commit, date);
         if (ev) events.push(ev);
       }
       for (const p of c.removed ?? []) {
-        const ev = classifyRegistryPath(p, "removed", commit, date);
+        const ev = classify(p, "removed", commit, date);
         if (ev) events.push(ev);
       }
     }

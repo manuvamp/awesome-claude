@@ -11,42 +11,16 @@ const whisper = {
 
 const RESERVED_OWNERS = [
   "about",
-  "account",
   "apps",
-  "business",
-  "codespaces",
   "collections",
-  "contact",
-  "customer-stories",
-  "dashboard",
-  "education",
-  "enterprise",
   "explore",
-  "features",
-  "issues",
-  "join",
-  "login",
-  "logout",
   "marketplace",
-  "new",
-  "nonprofits",
   "notifications",
-  "organizations",
   "orgs",
-  "pricing",
   "pulls",
-  "readme",
-  "search",
-  "security",
-  "sessions",
   "settings",
-  "signup",
   "sponsors",
-  "stars",
-  "team",
   "topics",
-  "trending",
-  "watching",
 ];
 
 describe("parseGitHubRepoUrl https forms", () => {
@@ -127,25 +101,6 @@ describe("parseGitHubRepoUrl reserved GitHub product roots", () => {
         `https://github.com/${owner.toUpperCase()}/SomeProject`,
       ),
     ).toBeNull();
-  });
-});
-
-describe("parseGitHubRepoUrl reserved two-segment product surfaces", () => {
-  // Regression: these GitHub marketing/product/auth pages used to parse as
-  // bogus owner/repo pairs because the second path segment made them look like
-  // real repositories.
-  it.each([
-    "https://github.com/features/copilot",
-    "https://github.com/enterprise/contact",
-    "https://github.com/security/advisories",
-    "https://github.com/customer-stories/duolingo",
-    "https://github.com/login/oauth",
-    "https://github.com/pricing/team",
-    "https://github.com/readme/guides",
-    "https://github.com/stars/anthropics",
-    "git@github.com:features/copilot.git",
-  ])("rejects reserved product surface %s", (input) => {
-    expect(parseGitHubRepoUrl(input)).toBeNull();
   });
 });
 
@@ -468,38 +423,6 @@ describe("parseGitHubRepoUrl duplicate equivalence classes", () => {
 });
 
 describe("parseGitHubRepoUrl enterprise and typo rejection", () => {
-  it.each([
-    "https://token@github.com/OpenAI/whisper",
-    "https://user:pass@github.com/OpenAI/whisper",
-    "git+https:user:pass@github.com/OpenAI/whisper",
-    "git+https:/user@github.com/OpenAI/whisper",
-  ])("rejects https URLs with embedded userinfo: %s", (input) => {
-    expect(parseGitHubRepoUrl(input)).toBeNull();
-  });
-
-  // Regression (#5588): the embedded-userinfo guard only runs for http:/https:,
-  // so before the protocol allowlist any other scheme carried credentials
-  // straight through to a successful parse.
-  it.each([
-    "ftp://user:pass@github.com/OpenAI/whisper",
-    "ftp://github.com/OpenAI/whisper",
-    "file://github.com/OpenAI/whisper",
-    "data://user:pass@github.com/OpenAI/whisper",
-    "ws://token@github.com/OpenAI/whisper",
-  ])("rejects URLs using a non-allowlisted scheme: %s", (input) => {
-    expect(parseGitHubRepoUrl(input)).toBeNull();
-  });
-
-  it.each([
-    "https://github.com/OpenAI/whisper",
-    "http://github.com/OpenAI/whisper",
-    "git://github.com/OpenAI/whisper.git",
-    "ssh://git@github.com/OpenAI/whisper.git",
-    "git+https://github.com/OpenAI/whisper.git",
-  ])("keeps allowlisted schemes parsing: %s", (input) => {
-    expect(parseGitHubRepoUrl(input)).toEqual(whisper);
-  });
-
   it.each([
     "github.com/OpenAI/whisper",
     "www.github.com/OpenAI/whisper",

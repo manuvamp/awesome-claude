@@ -1,16 +1,17 @@
 import * as React from "react";
+import { compareBrowseShareUrl } from "@/lib/compare-browse-share-link";
 import {
-  compareContextInteractiveSelectionParam,
-  compareContextInteractiveShareUrl,
-  compareContextSelectionChanged,
-} from "@/lib/compare-context-interactive-ui-lib";
-import { hasCompareItem, resolveCompareParam, toggleCompareItem } from "@/lib/compare-selection";
+  hasCompareItem,
+  resolveCompareParam,
+  serializeCompareItems,
+  toggleCompareItem,
+} from "@/lib/compare-selection";
 import type { EntryIdentity } from "@/lib/entry-identity";
 import type { Entry } from "@/types/registry";
 
 interface CompareActions {
   setOpen: (open: boolean) => void;
-  toggle: (e: Entry) => boolean;
+  toggle: (e: Entry) => void;
   clear: () => void;
   has: (entry: EntryIdentity) => boolean;
   /** Hydrate selection from a `cat/slug,cat/slug` URL param string. */
@@ -60,9 +61,8 @@ function createCompareStore(): CompareStore {
     toggle: (e) => {
       const cur = state.items;
       const next = toggleCompareItem(cur, e);
-      if (next === cur) return false;
+      if (next === cur) return; // at the 4-item cap — no change
       setState({ ...state, items: next });
-      return true;
     },
     clear: () => {
       if (state.items.length === 0 && !state.open) return;
@@ -78,13 +78,17 @@ function createCompareStore(): CompareStore {
       // URL, keeping the registry dataset out of the universal client bundle.
       void import("@/data/entries").then(({ ENTRIES }) => {
         const next = resolveCompareParam(ENTRIES, param);
-        if (compareContextSelectionChanged(next, state.items)) {
-          setState({ ...state, items: next });
-        }
+        const sig = serializeCompareItems(next);
+        const curSig = serializeCompareItems(state.items);
+        if (sig !== curSig) setState({ ...state, items: next });
       });
     },
-    serialize: () => compareContextInteractiveSelectionParam(state.items),
-    getShareUrl: () => compareContextInteractiveShareUrl(state.items),
+    serialize: () => serializeCompareItems(state.items),
+    getShareUrl: () => {
+      const sig = serializeCompareItems(state.items);
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      return compareBrowseShareUrl(sig, origin);
+    },
   };
 
   return {

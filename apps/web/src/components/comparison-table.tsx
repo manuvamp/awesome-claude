@@ -6,9 +6,7 @@ import {
   PlatformChip,
   InstallRiskBadge,
   NotesPresenceChips,
-  SourceBadge,
 } from "@/components/badges";
-import { HarnessBadgeRow } from "@/components/harness-badge";
 import { TrustDrilldown } from "@/components/trust-drilldown";
 import { CopyButton } from "@/components/copy-button";
 import { SourceCitations } from "@/components/source-citations";
@@ -17,18 +15,20 @@ import { brandIdentityLabel } from "@/lib/brand-icons";
 import {
   comparisonDecisionRows,
   displayCompareSignal,
+  divergingDecisionRowLabels,
   signalToneClassForDisplay,
-} from "@/lib/compare-table-signals-ui-lib";
-import { COMPARE_TABLE_SURFACE, type CompareAction } from "@/lib/compare-table-actions-ui-lib";
-import { compareTableActionsForEntry } from "@/lib/compare-table-actions-interactive-ui-lib";
-import { compareTableInteractiveUiState } from "@/lib/compare-table-interactive-ui-lib";
-import { recordCompareIntentEvent } from "@/lib/compare-entry-actions";
-import { trackEvent, entryEventKey } from "@/lib/analytics";
+} from "@/lib/compare-table-decision-rows";
 import {
-  compareTableEntryAnalyticsData,
-  compareTableEntryAnalyticsEvent,
-} from "@/lib/compare-table-entry-cta-events";
-import { claimCtaAnalyticsData, claimCtaAnalyticsEvent } from "@/lib/conversion-cta-events";
+  COMPARE_TABLE_SURFACE,
+  compareTableActionsDiverge,
+  shouldRenderCompareTableActions,
+} from "@/lib/compare-table-actions";
+import {
+  recordCompareIntentEvent,
+  resolveCompareEntryActions,
+  type CompareAction,
+} from "@/lib/compare-entry-actions";
+import { trackEvent, entryEventKey } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import type { Entry } from "@/types/registry";
 import { EntryBrandMark } from "./entry-brand-mark";
@@ -57,14 +57,8 @@ function CompareSignalCell({
   );
 }
 
-function TableCompareActions({
-  entry,
-  actionCells,
-}: {
-  entry: Entry;
-  actionCells: ReturnType<typeof compareTableInteractiveUiState>["actionCells"];
-}) {
-  const actions = compareTableActionsForEntry(entry, actionCells);
+function TableCompareActions({ entry }: { entry: Entry }) {
+  const actions = resolveCompareEntryActions(entry);
 
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -119,10 +113,12 @@ function TableActionButton({ entry, action }: { entry: Entry; action: CompareAct
         <Link
           to="/claim"
           onClick={() => {
-            trackEvent(
-              claimCtaAnalyticsEvent(),
-              claimCtaAnalyticsData("compare-table", entry.category, entry.slug),
-            );
+            if (action.analyticsEvent) {
+              trackEvent(action.analyticsEvent, {
+                entry: eventKey,
+                surface: COMPARE_TABLE_SURFACE,
+              });
+            }
           }}
           className="inline-flex h-7 items-center rounded-md border border-border bg-surface px-2 text-xs font-medium text-ink hover:bg-surface-2"
         >
@@ -131,12 +127,12 @@ function TableActionButton({ entry, action }: { entry: Entry; action: CompareAct
       );
     }
 
-    if (action.href) {
+    if (action.href && action.external) {
       return (
         <a
           href={action.href}
-          target={action.external ? "_blank" : undefined}
-          rel={action.external ? "noreferrer" : undefined}
+          target="_blank"
+          rel="noreferrer"
           onClick={() => {
             if (action.analyticsEvent) {
               trackEvent(action.analyticsEvent, {
@@ -165,16 +161,10 @@ const DECISION_COMPARISON_ROWS: RowDef[] = comparisonDecisionRows().map((row) =>
 
 /** Shared comparison field definitions — used by the interactive /compare page and curated pages. */
 export const COMPARISON_ROWS: RowDef[] = [
-  { label: "Trust", render: (e) => <TrustDrilldown entry={e} surface="compare-table" /> },
+  { label: "Trust", render: (e) => <TrustDrilldown entry={e} /> },
   ...DECISION_COMPARISON_ROWS,
-  {
-    label: "Install risk",
-    render: (e) => <InstallRiskBadge entry={e} asLink surface="compare-table" />,
-  },
-  {
-    label: "Notes",
-    render: (e) => <NotesPresenceChips entry={e} asLink surface="compare-table" />,
-  },
+  { label: "Install risk", render: (e) => <InstallRiskBadge entry={e} /> },
+  { label: "Notes", render: (e) => <NotesPresenceChips entry={e} /> },
   {
     label: "Brand",
     render: (e) => {
@@ -189,17 +179,10 @@ export const COMPARISON_ROWS: RowDef[] = [
       );
     },
   },
-  {
-    label: "Category",
-    render: (e) => (
-      <CategoryPill asLink category={e.category} surface="compare-table">
-        {e.category}
-      </CategoryPill>
-    ),
-  },
+  { label: "Category", render: (e) => <CategoryPill>{e.category}</CategoryPill> },
   {
     label: "Source",
-    render: (e) => <SourceBadge status={e.source} asLink surface="compare-table" />,
+    render: (e) => <span className="text-sm capitalize text-ink">{e.source}</span>,
   },
   { label: "Author", render: (e) => <span className="text-sm text-ink">{e.author}</span> },
   {
@@ -211,19 +194,10 @@ export const COMPARISON_ROWS: RowDef[] = [
     render: (e) => (
       <div className="flex flex-wrap gap-1">
         {e.platforms.map((p) => (
-          <PlatformChip key={p} id={p} asLink surface="compare-table" />
+          <PlatformChip key={p} id={p} />
         ))}
       </div>
     ),
-  },
-  {
-    label: "Harness",
-    render: (e) =>
-      e.harness && e.harness.length > 0 ? (
-        <HarnessBadgeRow ids={e.harness} asLink surface="compare-table" />
-      ) : (
-        <span className="text-xs text-ink-subtle">—</span>
-      ),
   },
   {
     label: "Source repo",
@@ -278,15 +252,7 @@ export const COMPARISON_ROWS: RowDef[] = [
           <pre className="max-h-24 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] text-ink">
             <code>{e.installCommand}</code>
           </pre>
-          <CopyButton
-            value={e.installCommand}
-            label="Copy install"
-            event="compare_copy_install"
-            eventData={{
-              entry: entryEventKey(e.category, e.slug),
-              surface: COMPARE_TABLE_SURFACE,
-            }}
-          />
+          <CopyButton value={e.installCommand} label="Copy install" />
         </div>
       ) : (
         <span className="text-xs text-ink-subtle">—</span>
@@ -300,15 +266,7 @@ export const COMPARISON_ROWS: RowDef[] = [
           <pre className="max-h-24 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] text-ink">
             <code>{e.configSnippet}</code>
           </pre>
-          <CopyButton
-            value={e.configSnippet}
-            label="Copy config"
-            event="compare_copy_config"
-            eventData={{
-              entry: entryEventKey(e.category, e.slug),
-              surface: COMPARE_TABLE_SURFACE,
-            }}
-          />
+          <CopyButton value={e.configSnippet} label="Copy config" />
         </div>
       ) : (
         <span className="text-xs text-ink-subtle">—</span>
@@ -318,7 +276,7 @@ export const COMPARISON_ROWS: RowDef[] = [
     label: "Citations",
     render: (e) => (
       <div className="text-xs">
-        <SourceCitations entry={e} surface={COMPARE_TABLE_SURFACE} />
+        <SourceCitations entry={e} />
       </div>
     ),
   },
@@ -338,24 +296,9 @@ export function ComparisonTable({
   entries: Entry[];
   showNextActions?: boolean;
 }) {
-  const { divergingDecisionLabels, renderNextActions, actionRowDiverges, actionCells } =
-    compareTableInteractiveUiState(entries, showNextActions);
-
-  const trackTableEntryClick = React.useCallback(
-    (entry: Entry, linkKind: "title" | "dossier", columnIndex: number) => {
-      trackEvent(
-        compareTableEntryAnalyticsEvent(),
-        compareTableEntryAnalyticsData(
-          entry.category,
-          entry.slug,
-          linkKind,
-          columnIndex,
-          entries.length,
-        ),
-      );
-    },
-    [entries.length],
-  );
+  const divergingLabels = new Set(divergingDecisionRowLabels(entries));
+  const renderNextActions = shouldRenderCompareTableActions(entries, showNextActions);
+  const actionRowDiverges = renderNextActions && compareTableActionsDiverge(entries);
 
   return (
     <div className="overflow-auto rounded-xl border border-border">
@@ -368,7 +311,7 @@ export function ComparisonTable({
             >
               Field
             </th>
-            {entries.map((e, columnIndex) => (
+            {entries.map((e) => (
               <th
                 scope="col"
                 key={`${e.category}/${e.slug}`}
@@ -379,7 +322,6 @@ export function ComparisonTable({
                   <Link
                     to="/entry/$category/$slug"
                     params={{ category: e.category, slug: e.slug }}
-                    onClick={() => trackTableEntryClick(e, "title", columnIndex)}
                     className="min-w-0 font-display text-sm font-semibold text-ink hover:underline"
                   >
                     {e.title}
@@ -389,7 +331,6 @@ export function ComparisonTable({
                 <Link
                   to="/entry/$category/$slug"
                   params={{ category: e.category, slug: e.slug }}
-                  onClick={() => trackTableEntryClick(e, "dossier", columnIndex)}
                   className="mt-2 inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink"
                 >
                   Open dossier <ArrowRight className="h-3 w-3" />
@@ -428,13 +369,13 @@ export function ComparisonTable({
                     actionRowDiverges && "bg-amber-500/5",
                   )}
                 >
-                  <TableCompareActions entry={e} actionCells={actionCells} />
+                  <TableCompareActions entry={e} />
                 </td>
               ))}
             </tr>
           ) : null}
           {COMPARISON_ROWS.map((row, i) => {
-            const rowDiverges = divergingDecisionLabels.has(row.label);
+            const rowDiverges = divergingLabels.has(row.label);
             return (
               <tr
                 key={row.label}

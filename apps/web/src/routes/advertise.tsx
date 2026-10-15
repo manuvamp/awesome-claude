@@ -2,20 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { Check } from "lucide-react";
 import { absoluteUrl } from "@/lib/seo";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CommercialDisclosure, CommercialLeadSuccess } from "@/components/commercial-disclosure";
 import { submitListingLead } from "@/lib/listing-lead-client";
-import { trackEvent } from "@/lib/analytics";
-import {
-  advertisePageEgressAnalyticsData,
-  advertisePageEgressAnalyticsEvent,
-  advertisePageEgressDestination,
-  advertisePagePlanSelectAnalyticsData,
-  advertisePagePlanSelectAnalyticsEvent,
-  advertisePageSubmitAnalyticsData,
-  advertisePageSubmitAnalyticsEvent,
-  type AdvertisePagePlanId,
-} from "@/lib/advertise-page-cta-events";
 
 export const Route = createFileRoute("/advertise")({
   head: () => ({
@@ -33,19 +21,12 @@ export const Route = createFileRoute("/advertise")({
   component: AdvertisePage,
 });
 
-const PLANS: {
-  id: AdvertisePagePlanId;
-  name: string;
-  price: string;
-  tierInterest: "featured" | "sponsored";
-  blurb: string;
-  bullets: string[];
-}[] = [
+const PLANS = [
   {
     id: "featured",
     name: "Featured listing",
     price: "Waitlist",
-    tierInterest: "featured",
+    tierInterest: "featured" as const,
     blurb: "Pinned slot in a category, labeled as sponsor. No fake organic placement.",
     bullets: ["One category", "Clear sponsor label", "Trust/source badges still apply"],
   },
@@ -53,7 +34,7 @@ const PLANS: {
     id: "brief",
     name: "Brief sponsor",
     price: "Waitlist",
-    tierInterest: "sponsored",
+    tierInterest: "sponsored" as const,
     blurb: "One transparent slot inside the Weekly Brief. Reviewed for fit.",
     bullets: ["Native section", "Topic alignment required", "Audited click reporting"],
   },
@@ -61,14 +42,14 @@ const PLANS: {
     id: "custom",
     name: "Custom",
     price: "Review fit",
-    tierInterest: "sponsored",
+    tierInterest: "sponsored" as const,
     blurb: "Hiring drives, launch coverage, MCP catalog placements.",
     bullets: ["Tailored scope", "Direct contact", "No dark patterns"],
   },
 ];
 
 function AdvertisePage() {
-  const [planId, setPlanId] = useState<AdvertisePagePlanId>(PLANS[0].id);
+  const [planId, setPlanId] = useState(PLANS[0].id);
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -78,7 +59,6 @@ function AdvertisePage() {
   async function submitLead(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (submitting) return;
-    trackEvent(advertisePageSubmitAnalyticsEvent(), advertisePageSubmitAnalyticsData(planId));
     setSubmitting(true);
     setError("");
     const form = new FormData(e.currentTarget);
@@ -114,25 +94,15 @@ function AdvertisePage() {
       <CommercialLeadSuccess
         title="Interest received"
         body="We'll review fit and reply within two business days. Paid placements are labeled and never affect organic ranking."
-        action={(() => {
-          const destination = advertisePageEgressDestination("retry");
-          if (!destination) return null;
-          return (
-            <Link
-              to={destination.to}
-              className="inline-flex h-10 items-center rounded-md border border-border bg-surface px-4 text-sm text-ink hover:bg-surface-2"
-              onClick={() => {
-                trackEvent(
-                  advertisePageEgressAnalyticsEvent(),
-                  advertisePageEgressAnalyticsData("retry"),
-                );
-                setDone(false);
-              }}
-            >
-              Submit another request
-            </Link>
-          );
-        })()}
+        action={
+          <Link
+            to="/advertise"
+            className="inline-flex h-10 items-center rounded-md border border-border bg-surface px-4 text-sm text-ink hover:bg-surface-2"
+            onClick={() => setDone(false)}
+          >
+            Submit another request
+          </Link>
+        }
       />
     );
   }
@@ -155,13 +125,7 @@ function AdvertisePage() {
             key={p.id}
             type="button"
             aria-pressed={planId === p.id}
-            onClick={() => {
-              setPlanId(p.id);
-              trackEvent(
-                advertisePagePlanSelectAnalyticsEvent(),
-                advertisePagePlanSelectAnalyticsData(p.id),
-              );
-            }}
+            onClick={() => setPlanId(p.id)}
             className={`flex flex-col rounded-xl border p-6 text-left transition-colors ${
               planId === p.id
                 ? "border-ink bg-surface ring-1 ring-ink/20"
@@ -188,24 +152,9 @@ function AdvertisePage() {
           <div className="eyebrow">Get in touch</div>
           <p className="mt-2 text-sm text-ink-muted">
             Free directory submissions stay on{" "}
-            {(() => {
-              const destination = advertisePageEgressDestination("submit");
-              if (!destination) return "/submit";
-              return (
-                <Link
-                  to={destination.to}
-                  onClick={() =>
-                    trackEvent(
-                      advertisePageEgressAnalyticsEvent(),
-                      advertisePageEgressAnalyticsData("submit"),
-                    )
-                  }
-                  className="text-ink underline"
-                >
-                  /submit
-                </Link>
-              );
-            })()}
+            <Link to="/submit" className="text-ink underline">
+              /submit
+            </Link>
             . This form is for paid placement interest only.
           </p>
           <div className="mt-4 space-y-4">
@@ -239,11 +188,7 @@ function AdvertisePage() {
             >
               {submitting ? "Sending…" : "Join waitlist"}
             </button>
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+            {error && <p className="text-sm text-trust-blocked">{error}</p>}
           </div>
         </form>
 

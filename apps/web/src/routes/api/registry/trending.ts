@@ -7,19 +7,62 @@ import { entryCommunityTarget, safeCommunitySignalCounts } from "@/lib/community
 import { communityDiscoveryScore } from "@/lib/growth-ranking";
 import { cachedJsonResponse } from "@/lib/http-cache";
 import { safeIntentEventCounts } from "@/lib/intent-events";
-import {
-  entryCanonicalUrl,
-  entrySourceStatus,
-  isFirstPartyPackage,
-} from "@/lib/registry-trending-entry-lib";
-import { entryPlatforms, matchesPlatform } from "@/lib/registry-trending-platform-lib";
-import { trendingReasonCodes } from "@/lib/trending-reason-codes-lib";
 import { safeVoteCounts } from "@/lib/votes";
 
 type Entry = (typeof ENTRIES)[number];
+type LegacyGeneratedFields = {
+  canonicalUrl?: unknown;
+  downloadTrust?: unknown;
+  trustSignals?: { sourceStatus?: unknown };
+};
 
 const entryKey = (entry: Entry) => `${entry.category}:${entry.slug}`;
 const communityTarget = (entry: Entry) => entryCommunityTarget(entry.category, entry.slug);
+const normalizePlatform = (value: string) => value.trim().toLowerCase();
+const platformAliases = (value: string) => {
+  const platform = normalizePlatform(value);
+  if (!platform) return [];
+  if (platform === "claude") return ["claude", "claude-code", "claude-desktop"];
+  if (platform === "vs code") return ["vscode"];
+  return [platform];
+};
+const entryPlatforms = (entry: Entry) => {
+  const values = new Set<string>();
+  for (const platform of entry.platforms ?? []) values.add(normalizePlatform(platform));
+  for (const item of entry.platformCompatibility ?? [])
+    values.add(normalizePlatform(item.platform));
+  return [...values];
+};
+const matchesPlatform = (entry: Entry, value: string) => {
+  const platforms = platformAliases(value);
+  if (!platforms.length) return true;
+  const supported = entryPlatforms(entry);
+  return platforms.some((platform) => supported.includes(platform));
+};
+
+const reasonCodes = (input: ReturnType<typeof trendInput>) =>
+  [
+    input.firstPartyPackage ? "first_party_package" : "",
+    input.productionVerified ? "production_verified" : "",
+  ].filter(Boolean);
+
+function entryCanonicalUrl(entry: Entry) {
+  const embedded = (entry as LegacyGeneratedFields).canonicalUrl;
+  return typeof embedded === "string" && embedded.trim()
+    ? embedded
+    : `https://heyclau.de/entry/${entry.category}/${entry.slug}`;
+}
+
+function entrySourceStatus(entry: Entry) {
+  const embedded = (entry as LegacyGeneratedFields).trustSignals?.sourceStatus;
+  if (typeof embedded === "string" && embedded.trim()) return embedded;
+  return entry.source === "unverified" ? "missing" : "available";
+}
+
+function isFirstPartyPackage(entry: Entry) {
+  const legacyTrust = (entry as LegacyGeneratedFields).downloadTrust;
+  return legacyTrust === "first-party" || Boolean(entry.downloadUrl && entry.packageVerified);
+}
 
 function trendInput(entry: Entry, states: Awaited<ReturnType<typeof readStates>>) {
   return {
@@ -53,7 +96,7 @@ export const GET = createApiHandler("registry.trending", async ({ request, query
   const ranked = scopedEntries
     .map((entry) => {
       const input = trendInput(entry, states);
-      return { entry, score: communityDiscoveryScore(input), reasons: trendingReasonCodes(input) };
+      return { entry, score: communityDiscoveryScore(input), reasons: reasonCodes(input) };
     })
     .filter((item) => item.score > 0)
     .sort(

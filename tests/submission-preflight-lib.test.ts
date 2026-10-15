@@ -9,7 +9,6 @@ import {
   isSimilarSubmissionTitle,
   isToolsRouteError,
   looksLikeCommercialListing,
-  missingNoteWarnings,
   normalizePreflightError,
   normalizePreflightText,
   preflightBlocker,
@@ -150,11 +149,6 @@ describe("submission preflight duplicate detection", () => {
       submittedSourceUrls({
         github_url:
           "https://www.GitHub.com/example/demo/?utm_source=newsletter",
-      }),
-    ).toEqual(["https://github.com/example/demo"]);
-    expect(
-      submittedSourceUrls({
-        github_url: "https://token@github.com/example/demo",
       }),
     ).toEqual(["https://github.com/example/demo"]);
     expect(
@@ -450,105 +444,5 @@ describe("submission preflight routing helpers", () => {
       targetPath: "",
       branchHint: "",
     });
-  });
-});
-
-describe("missingNoteWarnings", () => {
-  const risk = (ids: string[]) =>
-    ({
-      classificationWarnings: ids.map((id) => ({ id })),
-    }) as unknown as Parameters<typeof missingNoteWarnings>[0];
-
-  it("surfaces both note warnings when present", () => {
-    const result = missingNoteWarnings(
-      risk(["missing_safety_notes", "missing_privacy_notes"]),
-    );
-    expect(result.safety?.id).toBe("missing_safety_notes");
-    expect(result.privacy?.id).toBe("missing_privacy_notes");
-  });
-
-  it("returns undefined for a note type that was not flagged", () => {
-    const result = missingNoteWarnings(risk(["missing_safety_notes"]));
-    expect(result.safety?.id).toBe("missing_safety_notes");
-    expect(result.privacy).toBeUndefined();
-  });
-
-  it("returns both undefined when there are no classification warnings", () => {
-    expect(missingNoteWarnings(risk([]))).toEqual({
-      safety: undefined,
-      privacy: undefined,
-    });
-  });
-});
-
-describe("submission-preflight-lib coverage gaps", () => {
-  it("missingNoteWarnings defaults to no warnings when classificationWarnings is absent", () => {
-    const result = missingNoteWarnings(
-      {} as Parameters<typeof missingNoteWarnings>[0],
-    );
-    expect(result).toEqual({ safety: undefined, privacy: undefined });
-  });
-
-  it("isSimilarSubmissionTitle returns false when either title tokenizes to nothing", () => {
-    expect(isSimilarSubmissionTitle("", "Browser Bridge")).toBe(false);
-    expect(isSimilarSubmissionTitle("Browser Bridge", "")).toBe(false);
-  });
-
-  it("isSimilarSubmissionTitle returns false when a title has only short words", () => {
-    // "ai ml" is non-empty and differs from the other title, but every token is
-    // <= 2 chars, so titleWords() is empty and the size guard returns false.
-    expect(isSimilarSubmissionTitle("ai ml", "Browser Bridge Tool")).toBe(
-      false,
-    );
-  });
-
-  it("findDuplicateCandidates falls back from name to title to empty", () => {
-    const entry = directoryEntry({
-      category: "mcp",
-      slug: "x",
-      title: "Browser Bridge",
-    });
-    // No name field -> the comparable title comes from `title` and matches.
-    const byTitle = findDuplicateCandidates({
-      entries: [entry],
-      fields: { title: "Browser Bridge" },
-      category: "mcp",
-      slug: "y",
-    });
-    expect(byTitle.some((c) => c.reasons.includes("title"))).toBe(true);
-    // Neither name nor title -> empty comparable title, no title-based match.
-    const noTitle = findDuplicateCandidates({
-      entries: [entry],
-      fields: {},
-      category: "mcp",
-      slug: "y",
-    });
-    expect(noTitle.every((c) => !c.reasons.includes("title"))).toBe(true);
-  });
-
-  it("findDuplicateCandidates skips the slug reason when category or slug is blank", () => {
-    const entry = directoryEntry({ category: "mcp", slug: "x", title: "X" });
-    const result = findDuplicateCandidates({
-      entries: [entry],
-      fields: { name: "X" },
-      category: "",
-      slug: "",
-    });
-    expect(result.every((c) => !c.reasons.includes("slug"))).toBe(true);
-  });
-
-  it("buildPreflightIssues uses a default source-review message when no summary is given", () => {
-    const result = buildPreflightIssues({
-      validationSkipped: false,
-      validationErrors: [],
-      category: "mcp",
-      fields: {},
-      duplicates: [],
-      sourceGateStatus: "fail",
-    });
-    const warning = result.warnings.find(
-      (w) => w.code === "source_needs_review",
-    );
-    expect(warning?.message).toContain("Add a canonical GitHub");
   });
 });

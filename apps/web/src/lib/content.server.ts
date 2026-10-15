@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { renderEntryLlms } from "@heyclaude/registry";
 import type {
@@ -8,33 +9,11 @@ import type {
   ContentEntry,
   DirectoryEntry,
   RegistryTrustReport,
+  RegistryEnvelope,
   SearchDocument,
 } from "@heyclaude/registry";
 
 import { getCloudflareBinding } from "@/lib/cloudflare-env.server";
-import {
-  buildAssetsDataRequestUrl,
-  loadJsonFromAssetsBinding,
-  loadTextFromAssetsBinding,
-  readLocalDataFileFromPaths,
-  readLocalJsonDataFileWithRetry,
-} from "@/lib/content-loader-lib";
-import {
-  DATA_ORIGIN,
-  isSafeContentPathPart,
-  localDataFilePaths,
-  normalizeEntryDetailPayload,
-  normalizeRegistryEntries,
-  safeDataArtifactPath,
-} from "@/lib/content-artifact-lib";
-import {
-  buildCategorySummaries,
-  createResettablePromiseCache,
-  entryDetailCacheKey,
-  MAX_ENTRY_DETAIL_CACHE_SIZE,
-  pruneEntryDetailCache,
-  sortRecentDirectoryEntries,
-} from "@/lib/content-query-lib";
 import { categoryDescriptions, categoryLabels, siteConfig } from "@/lib/site";
 import {
   applySourceRepoSignalToEntry,
@@ -42,12 +21,10 @@ import {
 } from "@/lib/source-repo-signals.server";
 
 export type { CategorySummary, ContentEntry, DirectoryEntry };
-export {
-  isSafeContentPathPart,
-  normalizeEntryDetailPayload,
-  normalizeRegistryEntries,
-} from "@/lib/content-artifact-lib";
 
+const DATA_ORIGIN = "https://heyclau.de";
+const MAX_ENTRY_DETAIL_CACHE_SIZE = 512;
+let directoryIndexPromise: Promise<DirectoryEntry[]> | null = null;
 const entryDetailPromises = new Map<string, Promise<ContentEntry | null>>();
 
 type EntryDetailPayload = {
@@ -56,84 +33,114 @@ type EntryDetailPayload = {
   trustSignals?: ContentEntry["trustSignals"];
 };
 
+export function normalizeEntryDetailPayload(payload: EntryDetailPayload): ContentEntry | null {
+  const entry = payload.entry ?? null;
+  if (!entry) return null;
+  if (!payload.trustSignals || entry.trustSignals) return entry;
+  return { ...entry, trustSignals: payload.trustSignals };
+}
+
+function localDataFilePaths(fileName: string) {
+  return [
+    path.join(process.cwd(), "public", "data", fileName),
+    path.join(process.cwd(), "apps", "web", "public", "data", fileName),
+  ].filter((filePath, index, paths) => paths.indexOf(filePath) === index);
+}
+
 async function readLocalDataFile(fileName: string) {
-  return readLocalDataFileFromPaths(localDataFilePaths(fileName), readFile);
+  let lastError: unknown = null;
+  for (const filePath of localDataFilePaths(fileName)) {
+    try {
+      return await readFile(filePath, "utf8");
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error(`Local data artifact not found: ${fileName}`);
 }
 
 async function readLocalJsonDataFile<T>(fileName: string): Promise<T> {
-  return readLocalJsonDataFileWithRetry<T>(fileName, localDataFilePaths(fileName), readFile, sleep);
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const raw = await readLocalDataFile(fileName);
+      return JSON.parse(raw) as T;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await sleep(25);
+    }
+  }
+  throw lastError || new Error(`Invalid local data artifact: ${fileName}`);
 }
 
 export async function loadJsonDataFile<T>(fileName: string): Promise<T> {
-  const safePath = safeDataArtifactPath(fileName);
   try {
-    return await readLocalJsonDataFile<T>(safePath);
+    return await readLocalJsonDataFile<T>(fileName);
   } catch {
+    // In the Cloudflare Worker runtime, read from the static ASSETS binding.
     const assets = getCloudflareBinding<{
       fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
     }>("ASSETS");
     if (!assets) {
-      throw new Error(`Static ASSETS binding is not available for ${safePath}`);
+      throw new Error(`Static ASSETS binding is not available for ${fileName}`);
     }
-    const url = buildAssetsDataRequestUrl(DATA_ORIGIN, safePath);
-    try {
-      return await loadJsonFromAssetsBinding<T>(assets, url);
-    } catch (error) {
-      throw new Error(
-        `Failed to load ${safePath} asset (${error instanceof Error ? error.message : "unknown"})`,
-      );
+    const response = await assets.fetch(new Request(`${DATA_ORIGIN}/data/${fileName}`));
+    if (!response.ok) {
+      throw new Error(`Failed to load ${fileName} asset (${response.status})`);
     }
+    return (await response.json()) as T;
   }
 }
 
 export async function loadTextDataFile(fileName: string): Promise<string> {
-  const safePath = safeDataArtifactPath(fileName);
   try {
-    return await readLocalDataFile(safePath);
+    return await readLocalDataFile(fileName);
   } catch {
     const assets = getCloudflareBinding<{
       fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
     }>("ASSETS");
     if (!assets) {
-      throw new Error(`Static ASSETS binding is not available for ${safePath}`);
+      throw new Error(`Static ASSETS binding is not available for ${fileName}`);
     }
-    const url = buildAssetsDataRequestUrl(DATA_ORIGIN, safePath);
-    try {
-      return await loadTextFromAssetsBinding(assets, url);
-    } catch (error) {
-      throw new Error(
-        `Failed to load ${safePath} asset (${error instanceof Error ? error.message : "unknown"})`,
-      );
+    const response = await assets.fetch(new Request(`${DATA_ORIGIN}/data/${fileName}`));
+    if (!response.ok) {
+      throw new Error(`Failed to load ${fileName} asset (${response.status})`);
     }
+    return response.text();
   }
 }
 
-// Persist the directory index across requests in a single-flight cache that
-// heals after a transient load failure (see createResettablePromiseCache); a
-// plain `??=` singleton would pin the first rejected promise forever and take
-// down every directory-backed surface for the isolate's lifetime. `cache()`
-// layers per-request deduplication on top.
-const loadDirectoryIndexOnce = createResettablePromiseCache(
-  (): Promise<DirectoryEntry[]> =>
-    loadJsonDataFile<import("@heyclaude/registry").RegistryEnvelope<DirectoryEntry>>(
-      "directory-index.json",
-    ).then(normalizeRegistryEntries),
-);
+export function normalizeRegistryEntries<T>(payload: RegistryEnvelope<T>): T[] {
+  if (!Array.isArray(payload?.entries)) {
+    throw new Error("Invalid registry artifact: expected entries envelope");
+  }
+  return payload.entries;
+}
 
-const loadDirectoryIndex = cache(loadDirectoryIndexOnce);
+const loadDirectoryIndex = cache(async (): Promise<DirectoryEntry[]> => {
+  directoryIndexPromise ??=
+    loadJsonDataFile<RegistryEnvelope<DirectoryEntry>>("directory-index.json").then(
+      normalizeRegistryEntries,
+    );
+  return directoryIndexPromise;
+});
 
 const loadSearchIndex = cache(async () => {
-  return loadJsonDataFile<import("@heyclaude/registry").RegistryEnvelope<SearchDocument>>(
-    "search-index.json",
-  ).then(normalizeRegistryEntries);
+  return loadJsonDataFile<RegistryEnvelope<SearchDocument>>("search-index.json").then(
+    normalizeRegistryEntries,
+  );
 });
+
+export function isSafeContentPathPart(value: string) {
+  return /^[a-z0-9-]+$/.test(value);
+}
 
 async function loadEntryDetail(category: string, slug: string) {
   if (!isSafeContentPathPart(category) || !isSafeContentPathPart(slug)) {
     return null;
   }
 
-  const key = entryDetailCacheKey(category, slug);
+  const key = `${category}:${slug}`;
   let promise = entryDetailPromises.get(key);
   if (!promise) {
     promise = loadJsonDataFile<EntryDetailPayload>(`entries/${category}/${slug}.json`)
@@ -146,7 +153,10 @@ async function loadEntryDetail(category: string, slug: string) {
         entryDetailPromises.delete(key);
         return null;
       });
-    pruneEntryDetailCache(entryDetailPromises, MAX_ENTRY_DETAIL_CACHE_SIZE);
+    if (entryDetailPromises.size >= MAX_ENTRY_DETAIL_CACHE_SIZE) {
+      const oldestKey = entryDetailPromises.keys().next().value;
+      if (oldestKey) entryDetailPromises.delete(oldestKey);
+    }
     entryDetailPromises.set(key, promise);
   }
 
@@ -252,15 +262,23 @@ export async function getDirectoryEntriesByCategory(category: string) {
 
 export const getCategorySummaries = cache(async (): Promise<CategorySummary[]> => {
   const entries = await loadDirectoryIndex();
-  return buildCategorySummaries(
-    entries,
-    siteConfig.categoryOrder,
-    categoryLabels,
-    categoryDescriptions,
-  );
+  return siteConfig.categoryOrder
+    .map((category) => {
+      const count = entries.filter((entry) => entry.category === category).length;
+      return {
+        category,
+        label: categoryLabels[category],
+        count,
+        description: categoryDescriptions[category],
+      };
+    })
+    .filter((entry) => entry.count > 0);
 });
 
 export async function getRecentEntries() {
   const entries = await getDirectoryEntries();
-  return sortRecentDirectoryEntries(entries);
+  return [...entries]
+    .filter((entry) => entry.dateAdded)
+    .sort((left, right) => String(right.dateAdded).localeCompare(String(left.dateAdded)))
+    .slice(0, 12);
 }

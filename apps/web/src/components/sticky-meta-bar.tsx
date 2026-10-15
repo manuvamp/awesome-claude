@@ -1,49 +1,12 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { Entry, Harness } from "@/types/registry";
-import {
-  CategoryPill,
-  TrustBadge,
-  SourceBadge,
-  InstallRiskBadge,
-  NotesPresenceChips,
-} from "./badges";
+import { CategoryPill, TrustBadge, InstallRiskBadge, NotesPresenceChips } from "./badges";
 import { Star, ArrowUp, Shield, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  useHarnessPref,
-  readScrollPos,
-  writeScrollPos,
-  clearScrollPos,
-  type CopyVariant,
-} from "@/lib/dossier-prefs";
+import { useHarnessPref, readScrollPos, writeScrollPos, clearScrollPos } from "@/lib/dossier-prefs";
 import { CopySegmented, variantsForEntry } from "./copy-segmented";
 import { EntryBrandMark } from "./entry-brand-mark";
-import { trackEvent } from "@/lib/analytics";
-import { recordIntentEvent } from "@/lib/intent-event-client";
-import {
-  ENTRY_DETAIL_STICKY_META_SURFACE,
-  entryDetailBrowseCategoryAnalyticsData,
-  entryDetailBrowseCategoryAnalyticsEvent,
-  entryDetailCopyAnalyticsData,
-  entryDetailCopyAnalyticsEvent,
-  entryDetailCopyIntentType,
-  entryDetailStickyBackToTopAnalyticsData,
-  entryDetailStickyBackToTopAnalyticsEvent,
-  entryDetailStickyCopyVariantSelectAnalyticsData,
-  entryDetailStickyCopyVariantSelectAnalyticsEvent,
-} from "@/lib/entry-detail-cta-events";
-import {
-  badgeChromeInstallRiskAnalyticsData,
-  badgeChromeInstallRiskAnalyticsEvent,
-  badgeChromeNotesAnalyticsData,
-  badgeChromeNotesAnalyticsEvent,
-  badgeChromeSourceAnalyticsData,
-  badgeChromeSourceAnalyticsEvent,
-  badgeChromeTrustAnalyticsData,
-  badgeChromeTrustAnalyticsEvent,
-} from "@/lib/badge-chrome-cta-events";
-import { categoryPillBrowseDestination } from "@/lib/category-pill-cta-events";
 
 /**
  * Appears once the user scrolls past the dossier header.
@@ -69,42 +32,6 @@ export function StickyMetaBar({
   );
   const [harness] = useHarnessPref(entry.category, entry.slug, harnessAvailable);
   const variants = useMemo(() => variantsForEntry(entry, harness), [entry, harness]);
-  const onStickyCopy = useCallback(
-    (variant: CopyVariant) => {
-      trackEvent(
-        entryDetailCopyAnalyticsEvent(variant),
-        entryDetailCopyAnalyticsData(entry.category, entry.slug, ENTRY_DETAIL_STICKY_META_SURFACE),
-      );
-      void recordIntentEvent(entryDetailCopyIntentType(variant), entry);
-    },
-    [entry],
-  );
-  const onStickyVariantSelect = useCallback(
-    (variant: CopyVariant) => {
-      trackEvent(
-        entryDetailStickyCopyVariantSelectAnalyticsEvent(),
-        entryDetailStickyCopyVariantSelectAnalyticsData(entry.category, entry.slug, variant),
-      );
-    },
-    [entry.category, entry.slug],
-  );
-  const onStickyBrowseCategory = useCallback(() => {
-    trackEvent(
-      entryDetailBrowseCategoryAnalyticsEvent(),
-      entryDetailBrowseCategoryAnalyticsData(
-        entry.category,
-        entry.slug,
-        ENTRY_DETAIL_STICKY_META_SURFACE,
-      ),
-    );
-  }, [entry.category, entry.slug]);
-  const onStickyBackToTop = useCallback(() => {
-    trackEvent(
-      entryDetailStickyBackToTopAnalyticsEvent(),
-      entryDetailStickyBackToTopAnalyticsData(entry.category, entry.slug, progress),
-    );
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [entry.category, entry.slug, progress]);
 
   // Visibility observer on the header sentinel.
   useEffect(() => {
@@ -172,23 +99,14 @@ export function StickyMetaBar({
         <div className="pointer-events-auto relative overflow-hidden rounded-xl border border-border bg-surface/95 shadow-sm backdrop-blur">
           {/* Row 1: identity */}
           <div className="flex min-w-0 items-start gap-2 px-3 pt-2 sm:items-center sm:gap-3">
-            {(() => {
-              const destination = categoryPillBrowseDestination(entry.category);
-              if (!destination) {
-                return <CategoryPill>{entry.category}</CategoryPill>;
-              }
-              return (
-                <Link
-                  to={destination.to}
-                  search={destination.search}
-                  className="shrink-0"
-                  aria-label={`Back to ${entry.category}`}
-                  onClick={onStickyBrowseCategory}
-                >
-                  <CategoryPill>{entry.category}</CategoryPill>
-                </Link>
-              );
-            })()}
+            <Link
+              to="/browse"
+              search={{ category: entry.category }}
+              className="shrink-0"
+              aria-label={`Back to ${entry.category}`}
+            >
+              <CategoryPill>{entry.category}</CategoryPill>
+            </Link>
             <EntryBrandMark entry={entry} size="xs" />
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink sm:truncate">
               <span className="line-clamp-2 sm:line-clamp-1">{entry.title}</span>
@@ -218,7 +136,7 @@ export function StickyMetaBar({
             </span>
             <button
               type="button"
-              onClick={onStickyBackToTop}
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
               className="hidden h-7 shrink-0 items-center gap-1 rounded-md border border-border bg-surface px-2 text-[11px] text-ink-muted hover:border-border-strong hover:text-ink sm:inline-flex"
               aria-label="Back to top"
             >
@@ -229,63 +147,20 @@ export function StickyMetaBar({
 
           {/* Row 2: trust + risk + copy switcher */}
           <div className="flex flex-wrap items-center gap-2 px-3 pb-2 pt-1.5">
-            <TrustBadge
-              level={entry.trust}
-              asLink
-              onNavigate={() =>
-                trackEvent(
-                  badgeChromeTrustAnalyticsEvent(),
-                  badgeChromeTrustAnalyticsData(entry.trust, "detail-sticky-meta"),
-                )
-              }
-            />
-            <SourceBadge
-              status={entry.source}
-              asLink
-              onNavigate={() =>
-                trackEvent(
-                  badgeChromeSourceAnalyticsEvent(),
-                  badgeChromeSourceAnalyticsData(entry.source, "detail-sticky-meta"),
-                )
-              }
-            />
-            <InstallRiskBadge
-              entry={entry}
-              size="xs"
-              asButton
-              onActivate={(risk) =>
-                trackEvent(
-                  badgeChromeInstallRiskAnalyticsEvent(),
-                  badgeChromeInstallRiskAnalyticsData(risk, "detail-sticky-meta"),
-                )
-              }
-            />
+            <TrustBadge level={entry.trust} />
+            <InstallRiskBadge entry={entry} size="xs" />
             <span className="hidden md:inline-flex">
-              <NotesPresenceChips
-                entry={entry}
-                interactive
-                onNoteClick={(noteKind, present) =>
-                  trackEvent(
-                    badgeChromeNotesAnalyticsEvent(),
-                    badgeChromeNotesAnalyticsData(noteKind, present, "detail-sticky-meta"),
-                  )
-                }
-              />
+              <NotesPresenceChips entry={entry} />
             </span>
 
             <div className="ml-auto inline-flex items-center gap-1.5">
               <span className="hidden sm:inline-flex">
-                <CopySegmented
-                  variants={variants}
-                  entryTitle={entry.title}
-                  onCopied={onStickyCopy}
-                  onVariantSelect={onStickyVariantSelect}
-                />
+                <CopySegmented variants={variants} entryTitle={entry.title} />
               </span>
               {/* Mobile: only a single copy button, no segmented control */}
               <button
                 type="button"
-                onClick={onStickyBackToTop}
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
                 className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-border bg-surface px-2 text-[11px] text-ink-muted hover:border-border-strong hover:text-ink sm:hidden"
                 aria-label="Back to top"
               >

@@ -6,47 +6,6 @@ export const RAYCAST_RELEASE_DUE_MARKER =
   "<!-- heyclaude:raycast-release-due -->";
 const RELEASE_WATCH_CONFIG_PATH = ".github/release-watch.json";
 
-/**
- * Parse the shared release-watch CLI flags (--json, --output <path>,
- * --upsert-issue) into an options object. Throws on any unknown option.
- */
-export function parseReleaseWatchArgs(argv) {
-  const args = { json: false, output: null, upsertIssue: false };
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "--json") {
-      args.json = true;
-    } else if (arg === "--output") {
-      args.output = argv[++index];
-    } else if (arg === "--upsert-issue") {
-      args.upsertIssue = true;
-    } else {
-      throw new Error(`Unknown option: ${arg}`);
-    }
-  }
-  return args;
-}
-
-// git log --format for readCommits: record-separated (\x1e) commits, each with
-// its hash and subject field-separated (\x1f).
-export const COMMIT_LOG_FORMAT = "%x1e%H%x1f%s";
-
-/**
- * Parse `git log --format=COMMIT_LOG_FORMAT` output into { sha, subject } records
- * (subject is the first line only). Blank records are dropped; a record with no
- * subject field yields an empty subject.
- */
-export function parseCommitLog(output) {
-  return String(output ?? "")
-    .split("\x1e")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const [sha, subject] = entry.split("\x1f");
-      return { sha, subject: subject?.split("\n")[0] ?? "" };
-    });
-}
-
 export function readReleaseWatchConfig({ repoRoot = process.cwd() } = {}) {
   const configPath = resolve(repoRoot, RELEASE_WATCH_CONFIG_PATH);
   let parsed;
@@ -238,7 +197,7 @@ export function buildRaycastReleaseIssue(report, options = {}) {
     labels: ["release", "raycast"],
     checklist: [
       "Run the Raycast extension validation workflow.",
-      "Review Store metadata, screenshots, and CHANGELOG.md against the latest merged release PR.",
+      "Review Store metadata, screenshots, and CHANGELOG.md with {PR_MERGE_DATE}.",
       "Mirror integrations/raycast into raycast/extensions/extensions/heyclaude and submit the upstream PR.",
       "After the upstream PR merges, create the local raycast-v* upstream-sync marker tag.",
     ],

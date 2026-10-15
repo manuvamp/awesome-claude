@@ -10,8 +10,6 @@
  * The public package surface (`commercial.js` / `@heyclaude/registry/commercial`)
  * re-exports everything below so existing imports stay unchanged.
  */
-import { isPublicHttpsUrl } from "./source-url-lib.js";
-
 export const LISTING_LEAD_KINDS = ["job", "tool", "claim"];
 export const COMMERCIAL_TIERS = ["free", "standard", "featured", "sponsored"];
 export const PAID_JOB_TIERS = ["standard", "featured", "sponsored"];
@@ -94,12 +92,6 @@ export function normalizePricingModel(value) {
   return "";
 }
 
-function isPublicLeadHttpsUrl(value) {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  return isPublicHttpsUrl(text);
-}
-
 export function validateListingLeadPayload(payload = {}) {
   const errors = [];
   const kind = normalizeLeadKind(payload.kind);
@@ -135,11 +127,11 @@ export function validateListingLeadPayload(payload = {}) {
   if (!listingTitle) errors.push("listingTitle is required");
   if (
     (kind === "tool" || kind === "claim") &&
-    !isPublicLeadHttpsUrl(websiteUrl)
+    !/^https:\/\//i.test(websiteUrl)
   ) {
     errors.push(`${kind} leads require an https websiteUrl`);
   }
-  if (kind === "job" && !isPublicLeadHttpsUrl(applyUrl)) {
+  if (kind === "job" && !/^https:\/\//i.test(applyUrl)) {
     errors.push("job leads require an https applyUrl");
   }
 
@@ -191,18 +183,6 @@ export function firstValue(...values) {
 
 export function hasHttpsUrl(value) {
   return /^https:\/\//i.test(textValue(value));
-}
-
-// A REQUIRED public https URL for job apply/source fields: it must be present
-// AND survive the same strict validation lead URLs already get. Unlike
-// isPublicHttpsUrl (which returns true for an empty string, i.e. "optionally
-// absent"), an empty value here is a failure because these job fields are
-// required. This closes the gap where hasHttpsUrl's `/^https:\/\//` prefix test
-// accepted malformed or credential-embedded URLs (e.g.
-// `https://user:pass@evil.com/apply`) onto the public jobs board.
-function isRequiredPublicHttpsUrl(value) {
-  const text = textValue(value);
-  return text !== "" && isPublicHttpsUrl(text);
 }
 
 export function validateJobPublicationQuality(job = {}) {
@@ -276,7 +256,7 @@ export function validateJobPublicationQuality(job = {}) {
   if (!employmentType) {
     errors.push("paid active jobs require an employment type");
   }
-  if (!isRequiredPublicHttpsUrl(sourceUrl)) {
+  if (!hasHttpsUrl(sourceUrl)) {
     errors.push("paid active jobs require an HTTPS source or apply URL");
   }
   if (!postedAt) {
@@ -327,10 +307,10 @@ export function validateJobPublicExposure(job = {}, options = {}) {
       `active jobs require a ${JOB_PUBLIC_EXPOSURE_RULES.summaryMinLength}+ character reviewed summary`,
     );
   }
-  if (!isRequiredPublicHttpsUrl(applyUrl)) {
+  if (!hasHttpsUrl(applyUrl)) {
     errors.push("active jobs require an HTTPS employer apply URL");
   }
-  if (!isRequiredPublicHttpsUrl(sourceUrl)) {
+  if (!hasHttpsUrl(sourceUrl)) {
     errors.push("active jobs require an HTTPS source URL");
   }
   if (!checkedAt && !hasLiveSourceTruth) {
@@ -582,10 +562,6 @@ export function summarizePlacementExpiry(
           ? Math.ceil((expiryTime - nowTime) / 86_400_000)
           : null;
       const status = normalizeCommercialStatus(placement.status || "active");
-      const isExpired =
-        expiryTime !== null &&
-        Number.isFinite(expiryTime) &&
-        expiryTime <= nowTime;
 
       return {
         targetKind: placement.targetKind || placement.target_kind || "",
@@ -596,11 +572,13 @@ export function summarizePlacementExpiry(
         daysUntilExpiry,
         needsRenewalReminder:
           status === "active" &&
-          !isExpired &&
           daysUntilExpiry !== null &&
           daysUntilExpiry >= 0 &&
           daysUntilExpiry <= Math.ceil(windowMs / 86_400_000),
-        expired: status === "active" && isExpired,
+        expired:
+          status === "active" &&
+          daysUntilExpiry !== null &&
+          daysUntilExpiry < 0,
       };
     })
     .sort((left, right) => {

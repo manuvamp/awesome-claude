@@ -1,22 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import {
-  PlatformChip,
-  InstallRiskBadge,
-  NotesPresenceChips,
-  SourceBadge,
-  TrustBadge,
-} from "@/components/badges";
-import { HarnessBadgeRow } from "@/components/harness-badge";
-import { trackEvent } from "@/lib/analytics";
-import {
-  badgeChromeTrustAnalyticsData,
-  badgeChromeTrustAnalyticsEvent,
-} from "@/lib/badge-chrome-cta-events";
-import {
-  hubCategoryRankingEntryAnalyticsData,
-  hubCategoryRankingEntryAnalyticsEvent,
-  hubEntryDestination,
-} from "@/lib/hub-entry-cta-events";
+import { PlatformChip, InstallRiskBadge, NotesPresenceChips } from "@/components/badges";
 import type { Entry } from "@/types/registry";
 
 /**
@@ -34,27 +17,18 @@ export function CategoryRankingTable({ entries, label }: { entries: Entry[]; lab
       <h2 className="h-display-2 text-ink">Top {label}, compared</h2>
       <p className="mt-2 max-w-3xl text-sm text-ink-muted">
         The leading {label.toLowerCase()} side by side on the signals that matter before you install
-        — trust tier, source provenance, install risk, setup, and disclosed safety notes. Ordered by
+        — source provenance, install risk, setup, and disclosed safety notes. Ordered by
         HeyClaude&apos;s metadata review, not by repo popularity.
       </p>
       <div className="mt-5 overflow-x-auto rounded-xl border border-border">
-        <table className="w-full min-w-[48rem] border-collapse text-left">
+        <table className="w-full min-w-[44rem] border-collapse text-left">
           <caption className="sr-only">
-            Top Claude {label} compared by trust, source, install risk, setup, platform support,
-            harness, and disclosed notes.
+            Top Claude {label} compared by source, install risk, setup, platform support, and
+            disclosed notes.
           </caption>
           <thead className="bg-surface">
             <tr>
-              {[
-                "Resource",
-                "Trust",
-                "Source",
-                "Install risk",
-                "Setup",
-                "Platforms",
-                "Harness",
-                "Notes",
-              ].map((head) => (
+              {["Resource", "Source", "Install risk", "Setup", "Platforms", "Notes"].map((head) => (
                 <th
                   key={head}
                   scope="col"
@@ -69,51 +43,18 @@ export function CategoryRankingTable({ entries, label }: { entries: Entry[]; lab
             {entries.map((e, i) => (
               <tr key={`${e.category}/${e.slug}`} className={i % 2 === 1 ? "bg-surface-2/30" : ""}>
                 <th scope="row" className="px-3 py-2.5 align-top">
-                  {(() => {
-                    const destination = hubEntryDestination(e.category, e.slug);
-                    if (!destination) {
-                      return <span className="text-sm font-medium text-ink">{e.title}</span>;
-                    }
-                    return (
-                      <Link
-                        to={destination.to}
-                        params={destination.params}
-                        onClick={() =>
-                          trackEvent(
-                            hubCategoryRankingEntryAnalyticsEvent(),
-                            hubCategoryRankingEntryAnalyticsData(
-                              e.category,
-                              e.slug,
-                              i,
-                              entries.length,
-                            ),
-                          )
-                        }
-                        className="story-link text-sm font-medium text-ink"
-                      >
-                        {e.title}
-                      </Link>
-                    );
-                  })()}
+                  <Link
+                    to="/entry/$category/$slug"
+                    params={{ category: e.category, slug: e.slug }}
+                    className="story-link text-sm font-medium text-ink"
+                  >
+                    {e.title}
+                  </Link>
                   <div className="mt-0.5 text-xs text-ink-subtle">{e.author}</div>
                 </th>
+                <td className="px-3 py-2.5 align-top text-sm capitalize text-ink">{e.source}</td>
                 <td className="px-3 py-2.5 align-top">
-                  <TrustBadge
-                    level={e.trust}
-                    asLink
-                    onNavigate={() =>
-                      trackEvent(
-                        badgeChromeTrustAnalyticsEvent(),
-                        badgeChromeTrustAnalyticsData(e.trust, "category-ranking"),
-                      )
-                    }
-                  />
-                </td>
-                <td className="px-3 py-2.5 align-top">
-                  <SourceBadge status={e.source} asLink surface="category-ranking" />
-                </td>
-                <td className="px-3 py-2.5 align-top">
-                  <InstallRiskBadge entry={e} asLink surface="category-ranking" />
+                  <InstallRiskBadge entry={e} />
                 </td>
                 <td className="px-3 py-2.5 align-top">
                   {e.installCommand ? (
@@ -128,7 +69,7 @@ export function CategoryRankingTable({ entries, label }: { entries: Entry[]; lab
                 <td className="px-3 py-2.5 align-top">
                   <div className="flex flex-wrap gap-1">
                     {e.platforms.slice(0, 3).map((p) => (
-                      <PlatformChip key={p} id={p} asLink surface="category-ranking" />
+                      <PlatformChip key={p} id={p} />
                     ))}
                     {e.platforms.length > 3 ? (
                       <span className="text-xs text-ink-subtle">+{e.platforms.length - 3}</span>
@@ -136,14 +77,7 @@ export function CategoryRankingTable({ entries, label }: { entries: Entry[]; lab
                   </div>
                 </td>
                 <td className="px-3 py-2.5 align-top">
-                  {e.harness && e.harness.length > 0 ? (
-                    <HarnessBadgeRow ids={e.harness} asLink surface="category-ranking" />
-                  ) : (
-                    <span className="text-xs text-ink-subtle">—</span>
-                  )}
-                </td>
-                <td className="px-3 py-2.5 align-top">
-                  <NotesPresenceChips entry={e} asLink surface="category-ranking" />
+                  <NotesPresenceChips entry={e} />
                 </td>
               </tr>
             ))}

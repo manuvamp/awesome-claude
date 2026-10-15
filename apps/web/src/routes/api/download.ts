@@ -4,12 +4,24 @@ import { downloadQuerySchema } from "@/lib/api/contracts";
 import { apiError, createApiHandler, type InferApiQuery } from "@/lib/api/router";
 import { logApiError, logApiInfo, logApiWarn, sample } from "@/lib/api-logs";
 import { readDownloadAsset } from "@/lib/download-assets.server";
-import {
-  filenameFromAsset,
-  getContentType,
-  isAllowedAssetPath,
-  DOWNLOAD_CACHE_CONTROL,
-} from "@/lib/download-asset-lib";
+
+function isAllowedAssetPath(asset: string) {
+  const normalized = String(asset || "").trim();
+  return (
+    /^\/downloads\/skills\/[a-z0-9-]+\.zip$/.test(normalized) ||
+    /^\/downloads\/mcp\/[a-z0-9-]+\.mcpb$/.test(normalized)
+  );
+}
+
+function getContentType(asset: string) {
+  if (asset.endsWith(".zip")) return "application/zip";
+  if (asset.endsWith(".mcpb")) return "application/octet-stream";
+  return "application/octet-stream";
+}
+
+function filenameFromAsset(asset: string) {
+  return asset.split("/").filter(Boolean).at(-1) || "download";
+}
 
 export const GET = createApiHandler("download", async ({ request, query, requestId }) => {
   const { asset } = query as InferApiQuery<typeof downloadQuerySchema>;
@@ -36,7 +48,7 @@ export const GET = createApiHandler("download", async ({ request, query, request
       headers: {
         "content-type": getContentType(asset),
         "content-disposition": `attachment; filename="${filename}"`,
-        "cache-control": DOWNLOAD_CACHE_CONTROL,
+        "cache-control": "public, max-age=31536000, immutable",
         "x-content-type-options": "nosniff",
       },
     });

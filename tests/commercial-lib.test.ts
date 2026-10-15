@@ -226,13 +226,6 @@ describe("validateListingLeadPayload", () => {
         websiteUrl: "http://insecure.example",
       }).errors,
     ).toContain("claim leads require an https websiteUrl");
-    expect(
-      validateListingLeadPayload({
-        ...base,
-        kind: "claim",
-        websiteUrl: "https://token@example.com/proof",
-      }).errors,
-    ).toContain("claim leads require an https websiteUrl");
   });
 
   it("requires an https applyUrl for job leads", () => {
@@ -334,20 +327,6 @@ describe("validateJobPublicationQuality", () => {
     expect(result.errors.join("\n")).toContain("expiresAt");
     expect(result.errors.join("\n")).toContain("source verification");
   });
-
-  it("rejects a credential-embedded apply/source URL on a paid active job", () => {
-    // sourceUrl falls back to applyUrl, so a credential-embedded applyUrl is
-    // what the source-or-apply HTTPS gate sees.
-    const result = validateJobPublicationQuality(
-      paidActiveJob({ applyUrl: "https://user:pass@evil.com/apply" }),
-    );
-    expect(result.ok).toBe(false);
-    expect(result.errors).toContain(
-      "paid active jobs require an HTTPS source or apply URL",
-    );
-    // A clean https applyUrl (the default fixture) does not trip the gate.
-    expect(validateJobPublicationQuality(paidActiveJob()).ok).toBe(true);
-  });
 });
 
 describe("validateJobPublicExposure", () => {
@@ -385,46 +364,6 @@ describe("validateJobPublicExposure", () => {
       last_checked_at: "2026-05-20",
     });
     expect(result.ok).toBe(true);
-  });
-
-  it("rejects credential-embedded and malformed apply/source URLs", () => {
-    const base = {
-      status: "active",
-      summary: "S".repeat(JOB_PUBLIC_EXPOSURE_RULES.summaryMinLength),
-      responsibilities: ["r1", "r2"],
-      requirements: ["q1", "q2"],
-      sourceCheckedAt: "2026-05-20",
-      source: "manual",
-    };
-
-    // Both forms below satisfy the old `/^https:\/\//` prefix test but are
-    // rejected by the stricter public-https validator.
-    for (const bad of ["https://user:pass@evil.com/apply", "https://"]) {
-      const result = validateJobPublicExposure({
-        ...base,
-        applyUrl: bad,
-        sourceUrl: bad,
-      });
-      expect(result.errors).toEqual(
-        expect.arrayContaining([
-          "active jobs require an HTTPS employer apply URL",
-          "active jobs require an HTTPS source URL",
-        ]),
-      );
-    }
-
-    // Legitimate https apply/source URLs still pass the URL check.
-    const good = validateJobPublicExposure({
-      ...base,
-      applyUrl: "https://jobs.example/apply",
-      sourceUrl: "https://jobs.example/source",
-    });
-    expect(good.errors).not.toContain(
-      "active jobs require an HTTPS employer apply URL",
-    );
-    expect(good.errors).not.toContain(
-      "active jobs require an HTTPS source URL",
-    );
   });
 
   it("allows live source truth to replace a missing verification date", () => {
@@ -886,26 +825,6 @@ describe("summarizePlacementExpiry", () => {
       needsRenewalReminder: false,
       status: "expired",
     });
-  });
-
-  it("treats a sub-day past expiry as expired instead of a renewal", () => {
-    const [summary] = summarizePlacementExpiry(
-      [
-        {
-          targetKind: "tool",
-          targetKey: "just-expired",
-          status: "active",
-          expiresAt: "2026-05-31T23:00:00.000Z",
-        },
-      ],
-      NOW,
-    );
-
-    expect(summary).toMatchObject({
-      expired: true,
-      needsRenewalReminder: false,
-    });
-    expect(Object.is(summary.daysUntilExpiry, -0)).toBe(true);
   });
 
   it("accepts a string now and custom reminder window", () => {

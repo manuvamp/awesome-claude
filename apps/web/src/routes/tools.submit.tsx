@@ -1,28 +1,19 @@
-import { toolListingTierInterest } from "@/lib/tool-listing-tier-lib";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { ArrowRight } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CommercialDisclosure } from "@/components/commercial-disclosure";
-import { trackEvent } from "@/lib/analytics";
 import { absoluteUrl } from "@/lib/seo";
 import { submitListingLead } from "@/lib/listing-lead-client";
-import {
-  toolsSubmitAdvertiseAnalyticsData,
-  toolsSubmitAdvertiseAnalyticsEvent,
-  toolsSubmitChromeDestination,
-  toolsSubmitClaimAnalyticsData,
-  toolsSubmitClaimAnalyticsEvent,
-  toolsSubmitCommunityAnalyticsData,
-  toolsSubmitCommunityAnalyticsEvent,
-  toolsSubmitListingSubmitAnalyticsData,
-  toolsSubmitListingSubmitAnalyticsEvent,
-  toolsSubmitReviewSubmitAnalyticsData,
-  toolsSubmitReviewSubmitAnalyticsEvent,
-  toolsSubmitToolsAnalyticsData,
-  toolsSubmitToolsAnalyticsEvent,
-} from "@/lib/tools-submit-page-cta-events";
+
+const TOOL_LISTING_TIERS = ["featured", "sponsored"] as const;
+
+function toolListingTierInterest(raw: FormDataEntryValue | null) {
+  const value = String(raw ?? "featured");
+  return TOOL_LISTING_TIERS.includes(value as (typeof TOOL_LISTING_TIERS)[number])
+    ? (value as (typeof TOOL_LISTING_TIERS)[number])
+    : "featured";
+}
 
 export const Route = createFileRoute("/tools/submit")({
   head: () => ({
@@ -41,49 +32,17 @@ export const Route = createFileRoute("/tools/submit")({
 });
 
 function SubmitTool() {
-  const toolsDestination = toolsSubmitChromeDestination("tools");
-  const communityDestination = toolsSubmitChromeDestination("community");
-  const advertiseDestination = toolsSubmitChromeDestination("advertise");
-  const claimDestination = toolsSubmitChromeDestination("claim");
-
   return (
     <div className="mx-auto max-w-[900px] px-4 py-10 sm:px-6">
-      <Breadcrumbs
-        home
-        items={[
-          {
-            label: "Tools",
-            to: toolsDestination?.to ?? "/tools",
-            onClick: () =>
-              trackEvent(
-                toolsSubmitToolsAnalyticsEvent(),
-                toolsSubmitToolsAnalyticsData("breadcrumb"),
-              ),
-          },
-          { label: "Submit" },
-        ]}
-      />
+      <Breadcrumbs home items={[{ label: "Tools", to: "/tools" }, { label: "Submit" }]} />
       <section className="mt-6 rounded-2xl border border-border bg-surface p-6">
         <div className="eyebrow">Commercial routing</div>
         <h1 className="mt-3 h-display-1 text-ink text-balance">Submit a commercial tool</h1>
         <p className="mt-4 max-w-2xl text-ink-muted">
           Free, source-backed resources belong in the community directory via{" "}
-          {communityDestination ? (
-            <Link
-              to={communityDestination.to}
-              className="text-ink underline"
-              onClick={() =>
-                trackEvent(
-                  toolsSubmitCommunityAnalyticsEvent(),
-                  toolsSubmitCommunityAnalyticsData(),
-                )
-              }
-            >
-              /submit
-            </Link>
-          ) : (
-            "/submit"
-          )}
+          <Link to="/submit" className="text-ink underline">
+            /submit
+          </Link>
           . Use the forms below for commercial listings, paid trust/source review interest, or route
           sponsorship and claim requests through the dedicated lead flows.
         </p>
@@ -99,34 +58,18 @@ function SubmitTool() {
             Sponsorship slots and listing ownership use separate review queues.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
-            {advertiseDestination ? (
-              <Link
-                to={advertiseDestination.to}
-                className="inline-flex h-10 items-center gap-1.5 rounded-md bg-ink px-4 text-sm font-medium text-background hover:bg-ink/90"
-                onClick={() =>
-                  trackEvent(
-                    toolsSubmitAdvertiseAnalyticsEvent(),
-                    toolsSubmitAdvertiseAnalyticsData("commercial-paths"),
-                  )
-                }
-              >
-                Sponsorship waitlist <ArrowRight className="h-4 w-4" />
-              </Link>
-            ) : null}
-            {claimDestination ? (
-              <Link
-                to={claimDestination.to}
-                className="inline-flex h-10 items-center gap-1.5 rounded-md border border-border bg-background px-4 text-sm font-medium text-ink hover:bg-surface-2"
-                onClick={() =>
-                  trackEvent(
-                    toolsSubmitClaimAnalyticsEvent(),
-                    toolsSubmitClaimAnalyticsData("commercial-paths"),
-                  )
-                }
-              >
-                Claim a listing
-              </Link>
-            ) : null}
+            <Link
+              to="/advertise"
+              className="inline-flex h-10 items-center gap-1.5 rounded-md bg-ink px-4 text-sm font-medium text-background hover:bg-ink/90"
+            >
+              Sponsorship waitlist <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              to="/claim"
+              className="inline-flex h-10 items-center gap-1.5 rounded-md border border-border bg-background px-4 text-sm font-medium text-ink hover:bg-surface-2"
+            >
+              Claim a listing
+            </Link>
           </div>
         </section>
       </div>
@@ -142,18 +85,13 @@ function CommercialToolListingForm() {
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (submitting) return;
-    const form = new FormData(e.currentTarget);
-    const tierInterest = toolListingTierInterest(form.get("tierInterest"));
-    trackEvent(
-      toolsSubmitListingSubmitAnalyticsEvent(),
-      toolsSubmitListingSubmitAnalyticsData(tierInterest),
-    );
     setSubmitting(true);
     setError("");
+    const form = new FormData(e.currentTarget);
     try {
       await submitListingLead({
         kind: "tool",
-        tierInterest,
+        tierInterest: toolListingTierInterest(form.get("tierInterest")),
         contactName: String(form.get("contactName") ?? "").trim(),
         contactEmail: String(form.get("email") ?? "").trim(),
         companyName: String(form.get("company") ?? "").trim(),
@@ -221,11 +159,7 @@ function CommercialToolListingForm() {
           >
             {submitting ? "Sending…" : "Submit listing interest"}
           </button>
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+          {error && <p className="text-sm text-trust-blocked">{error}</p>}
         </form>
       )}
     </section>
@@ -240,14 +174,10 @@ function PaidReviewInterestForm() {
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (submitting) return;
-    const form = new FormData(e.currentTarget);
-    const entryRef = String(form.get("entryRef") ?? "").trim();
-    trackEvent(
-      toolsSubmitReviewSubmitAnalyticsEvent(),
-      toolsSubmitReviewSubmitAnalyticsData(Boolean(entryRef)),
-    );
     setSubmitting(true);
     setError("");
+    const form = new FormData(e.currentTarget);
+    const entryRef = String(form.get("entryRef") ?? "").trim();
     const notes = String(form.get("notes") ?? "").trim();
     try {
       await submitListingLead({
@@ -319,11 +249,7 @@ function PaidReviewInterestForm() {
           >
             {submitting ? "Sending…" : "Submit review interest"}
           </button>
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+          {error && <p className="text-sm text-trust-blocked">{error}</p>}
         </form>
       )}
     </section>

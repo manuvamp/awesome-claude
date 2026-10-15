@@ -10,150 +10,53 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { useCompare } from "@/lib/compare";
-import {
-  CategoryPill,
-  PlatformChip,
-  NotesPresenceChips,
-  InstallRiskBadge,
-  SourceBadge,
-} from "@/components/badges";
+import { CategoryPill, PlatformChip, NotesPresenceChips } from "@/components/badges";
 import { HarnessBadgeRow } from "@/components/harness-badge";
 import { HarnessVariantPicker } from "@/components/harness-variant-picker";
 import { TrustDrilldown } from "./trust-drilldown";
 import { CopyButton } from "./copy-button";
 import { CopySegmented, variantsForEntry } from "./copy-segmented";
 import { EntryBrandMark } from "./entry-brand-mark";
-import { useCopyPref, useHarnessPref, type CopyVariant } from "@/lib/dossier-prefs";
-import { COMPARE_DRAWER_SURFACE, type CompareAction } from "@/lib/compare-drawer-actions-ui-lib";
-import { compareDrawerActionsForEntry } from "@/lib/compare-drawer-actions-interactive-ui-lib";
-import { compareDrawerInteractiveUiState } from "@/lib/compare-drawer-interactive-ui-lib";
-import { recordCompareIntentEvent } from "@/lib/compare-entry-actions";
-import { trackEvent, entryEventKey, outboundHost } from "@/lib/analytics";
+import { useCopyPref, useHarnessPref } from "@/lib/dossier-prefs";
+import { COMPARE_DRAWER_SURFACE, compareDrawerActionsDiverge } from "@/lib/compare-drawer-actions";
+import { compareDrawerBannerTexts } from "@/lib/compare-drawer-summary";
+import { compareDrawerEmptyHint } from "@/lib/compare-empty-guidance";
+import { compareFullViewSearch } from "@/lib/compare-interactive-link";
 import {
-  compareDrawerClearAnalyticsData,
-  compareDrawerClearAnalyticsEvent,
-  compareDrawerUndoRestoreAnalyticsData,
-  compareDrawerUndoRestoreAnalyticsEvent,
-  compareDrawerSourceAnalyticsData,
-  compareDrawerSourceAnalyticsEvent,
-  compareDrawerShareLinkCopyAnalyticsData,
-  compareDrawerShareLinkCopyAnalyticsEvent,
-  compareDrawerRemoveAnalyticsData,
-  compareDrawerRemoveAnalyticsEvent,
-  compareDrawerFullViewAnalyticsData,
-  compareDrawerFullViewAnalyticsEvent,
-  compareDrawerOpenDossierAnalyticsData,
-  compareDrawerOpenDossierAnalyticsEvent,
-} from "@/lib/compare-drawer-cta-events";
-import {
-  compareDrawerDecisionPresetAnalyticsData,
-  compareDrawerDecisionPresetAnalyticsEvent,
-  compareDrawerDecisionPresetSurface,
-} from "@/lib/compare-drawer-decision-preset-cta-events";
-import {
-  compareDrawerScenarioAnalyticsData,
-  compareDrawerScenarioAnalyticsEvent,
-  compareDrawerScenarioSurface,
-} from "@/lib/compare-drawer-scenario-cta-events";
-import {
-  compareDrawerDecisionBriefSurface,
-  compareDrawerEvidenceGapsSurface,
-} from "@/lib/compare-panel-entry-cta-events";
-import {
-  compareDrawerSnippetCopyAnalyticsData,
-  compareDrawerSnippetCopyAnalyticsEvent,
-  compareDrawerSnippetVariantAnalyticsData,
-  compareDrawerSnippetVariantAnalyticsEvent,
-} from "@/lib/compare-drawer-snippet-cta-events";
-import {
-  harnessVariantSelectAnalyticsData,
-  harnessVariantSelectAnalyticsEvent,
-} from "@/lib/harness-variant-cta-events";
-import { claimCtaAnalyticsData, claimCtaAnalyticsEvent } from "@/lib/conversion-cta-events";
+  recordCompareIntentEvent,
+  resolveCompareEntryActions,
+  type CompareAction,
+} from "@/lib/compare-entry-actions";
+import { trackEvent, entryEventKey } from "@/lib/analytics";
 import type { Entry, Harness } from "@/types/registry";
 import { cn } from "@/lib/utils";
-import { sameEntry } from "@/lib/entry-identity";
 import { brandIdentityLabel } from "@/lib/brand-icons";
-import { compareDecisionBriefState } from "@/lib/compare-decision-brief";
-import { CompareDecisionBriefPanel } from "@/components/compare-decision-brief-panel";
 import {
-  compareScenarioRankingState,
-  type CompareScenarioId,
-} from "@/lib/compare-scenario-ranking";
-import { CompareScenarioRankingPanel } from "@/components/compare-scenario-ranking-panel";
-import { compareEvidenceGapsState } from "@/lib/compare-evidence-gaps";
-import { CompareEvidenceGapsPanel } from "@/components/compare-evidence-gaps-panel";
-import {
-  compareRolloutReadinessState,
-  type RolloutPresetId,
-} from "@/lib/compare-rollout-readiness";
-import { CompareRolloutReadinessPanel } from "@/components/compare-rollout-readiness-panel";
-import {
-  compareOperationalFitHeatmapState,
-  type OperationalFitPresetId,
-} from "@/lib/compare-operational-fit-heatmap";
-import { CompareOperationalFitHeatmapPanel } from "@/components/compare-operational-fit-heatmap-panel";
-import {
-  compareDeploymentRiskMapState,
-  type DeploymentRiskPresetId,
-} from "@/lib/compare-deployment-risk-map";
-import { CompareDeploymentRiskMapPanel } from "@/components/compare-deployment-risk-map-panel";
-import {
-  compareMitigationPriorityState,
-  type MitigationPriorityPresetId,
-} from "@/lib/compare-mitigation-priority";
-import { CompareMitigationPriorityPanel } from "@/components/compare-mitigation-priority-panel";
-import {
-  compareDrawerDecisionRows,
+  COMPARE_DECISION_ROWS,
   compareSignalToneClass,
+  decisionRowDiverges,
   type CompareSignalValue,
-} from "@/lib/compare-drawer-signals-ui-lib";
+} from "@/lib/compare-entry-signals";
 
 interface RowDef {
   label: string;
   render: (e: Entry) => React.ReactNode;
-}
-
-function CompareDrawerSourceCell({ entry }: { entry: Entry }) {
-  if (!entry.sourceUrl) {
-    return <span className="text-xs text-ink-subtle">—</span>;
-  }
-
-  return (
-    <a
-      href={entry.sourceUrl}
-      target="_blank"
-      rel="noreferrer"
-      onClick={() => {
-        trackEvent(
-          compareDrawerSourceAnalyticsEvent(),
-          compareDrawerSourceAnalyticsData(
-            entry.category,
-            entry.slug,
-            outboundHost(entry.sourceUrl!),
-          ),
-        );
-        void recordCompareIntentEvent("open", entry);
-      }}
-      className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink"
-    >
-      Repository <ExternalLink className="h-3 w-3" />
-    </a>
-  );
+  diverges?: (items: Entry[]) => boolean;
 }
 
 const ROWS: RowDef[] = [
   {
     label: "Trust",
-    render: (e) => <TrustDrilldown entry={e} surface="compare-drawer" />,
+    render: (e) => <TrustDrilldown entry={e} />,
   },
-  ...compareDrawerDecisionRows().map((row) => ({
+  ...COMPARE_DECISION_ROWS.map((row) => ({
     label: row.label,
     render: (e: Entry) => {
       const value = row.resolve(e);
       if (!value) return <span className="text-xs text-ink-subtle">—</span>;
       return <CompareSignalCell value={value} />;
     },
+    diverges: (items: Entry[]) => decisionRowDiverges(row.resolve, items),
   })),
   {
     label: "Safety",
@@ -197,11 +100,7 @@ const ROWS: RowDef[] = [
   },
   {
     label: "Category",
-    render: (e) => (
-      <CategoryPill asLink category={e.category} surface="compare-drawer">
-        {e.category}
-      </CategoryPill>
-    ),
+    render: (e) => <CategoryPill>{e.category}</CategoryPill>,
   },
   {
     label: "Author",
@@ -212,7 +111,7 @@ const ROWS: RowDef[] = [
     render: (e) => (
       <div className="flex flex-wrap gap-1">
         {e.platforms.map((p) => (
-          <PlatformChip key={p} id={p} asLink surface="compare-drawer" />
+          <PlatformChip key={p} id={p} />
         ))}
       </div>
     ),
@@ -221,18 +120,14 @@ const ROWS: RowDef[] = [
     label: "Harness",
     render: (e) =>
       e.harness && e.harness.length > 0 ? (
-        <HarnessBadgeRow ids={e.harness} asLink surface="compare-drawer" />
+        <HarnessBadgeRow ids={e.harness} />
       ) : (
         <span className="text-xs text-ink-subtle">—</span>
       ),
   },
   {
     label: "Notes",
-    render: (e) => <NotesPresenceChips entry={e} asLink surface="compare-drawer" />,
-  },
-  {
-    label: "Install risk",
-    render: (e) => <InstallRiskBadge entry={e} asLink surface="compare-drawer" />,
+    render: (e) => <NotesPresenceChips entry={e} />,
   },
   {
     label: "Source repo",
@@ -249,12 +144,20 @@ const ROWS: RowDef[] = [
     render: (e) => <SnippetCell entry={e} />,
   },
   {
-    label: "Source status",
-    render: (e) => <SourceBadge status={e.source} asLink surface="compare-drawer" />,
-  },
-  {
     label: "Source",
-    render: (e) => <CompareDrawerSourceCell entry={e} />,
+    render: (e) =>
+      e.sourceUrl ? (
+        <a
+          href={e.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink"
+        >
+          Repository <ExternalLink className="h-3 w-3" />
+        </a>
+      ) : (
+        <span className="text-xs text-ink-subtle">—</span>
+      ),
   },
   {
     label: "Claim",
@@ -275,14 +178,8 @@ function CompareSignalCell({ value }: { value: CompareSignalValue }) {
   );
 }
 
-function DrawerCompareActions({
-  entry,
-  actionCells,
-}: {
-  entry: Entry;
-  actionCells: ReturnType<typeof compareDrawerInteractiveUiState>["actionCells"];
-}) {
-  const actions = compareDrawerActionsForEntry(entry, actionCells);
+function DrawerCompareActions({ entry }: { entry: Entry }) {
+  const actions = resolveCompareEntryActions(entry);
 
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -337,10 +234,12 @@ function DrawerActionButton({ entry, action }: { entry: Entry; action: CompareAc
         <Link
           to="/claim"
           onClick={() => {
-            trackEvent(
-              claimCtaAnalyticsEvent(),
-              claimCtaAnalyticsData("compare-drawer", entry.category, entry.slug),
-            );
+            if (action.analyticsEvent) {
+              trackEvent(action.analyticsEvent, {
+                entry: eventKey,
+                surface: COMPARE_DRAWER_SURFACE,
+              });
+            }
           }}
           className="inline-flex h-7 items-center rounded-md border border-border bg-surface px-2 text-xs font-medium text-ink hover:bg-surface-2"
         >
@@ -349,12 +248,12 @@ function DrawerActionButton({ entry, action }: { entry: Entry; action: CompareAc
       );
     }
 
-    if (action.href) {
+    if (action.href && action.external) {
       return (
         <a
           href={action.href}
-          target={action.external ? "_blank" : undefined}
-          rel={action.external ? "noreferrer" : undefined}
+          target="_blank"
+          rel="noreferrer"
           onClick={() => {
             if (action.analyticsEvent) {
               trackEvent(action.analyticsEvent, {
@@ -397,17 +296,6 @@ function SnippetCell({ entry }: { entry: Entry }) {
           available={harnessAvailable}
           value={harness as Harness | null}
           onChange={setHarness}
-          onVariantSelect={(nextHarness) =>
-            trackEvent(
-              harnessVariantSelectAnalyticsEvent(),
-              harnessVariantSelectAnalyticsData(
-                entry.category,
-                entry.slug,
-                COMPARE_DRAWER_SURFACE,
-                nextHarness,
-              ),
-            )
-          }
         />
       )}
       {payload ? (
@@ -419,12 +307,6 @@ function SnippetCell({ entry }: { entry: Entry }) {
             value={payload}
             label={`Copy ${active}`}
             toastLabel={`Copied ${active} — ${entry.title}`}
-            event={compareDrawerSnippetCopyAnalyticsEvent(active as CopyVariant)}
-            eventData={compareDrawerSnippetCopyAnalyticsData(
-              entry.category,
-              entry.slug,
-              active as CopyVariant,
-            )}
           />
         </>
       ) : (
@@ -435,142 +317,30 @@ function SnippetCell({ entry }: { entry: Entry }) {
 }
 
 export function CompareDrawer() {
-  const { items, open, setOpen, toggle, clear, hydrate } = useCompare();
-  const [scenario, setScenario] = React.useState<CompareScenarioId>("balanced");
-  const [rolloutPreset, setRolloutPreset] = React.useState<RolloutPresetId>("team");
-  const [fitPreset, setFitPreset] = React.useState<OperationalFitPresetId>("team-default");
-  const [riskPreset, setRiskPreset] = React.useState<DeploymentRiskPresetId>("balanced");
-  const [mitigationPreset, setMitigationPreset] =
-    React.useState<MitigationPriorityPresetId>("balanced");
-  const {
-    drawerUi,
-    emptyHint,
-    singleItemHint,
-    shareUrl,
-    divergingDecisionLabels,
-    actionRowDiverges,
-    actionCells,
-  } = compareDrawerInteractiveUiState(items);
-  const decisionBrief = compareDecisionBriefState(items);
-  const scenarioRanking = compareScenarioRankingState(items, scenario);
-  const evidenceGaps = compareEvidenceGapsState(items);
-  const rolloutReadiness = compareRolloutReadinessState(items, rolloutPreset);
-  const operationalFitHeatmap = compareOperationalFitHeatmapState(items, fitPreset);
-  const deploymentRiskMap = compareDeploymentRiskMapState(items, riskPreset);
-  const mitigationPriority = compareMitigationPriorityState(items, mitigationPreset);
-  const { bannerTexts, fullViewSearch } = drawerUi;
-
-  const onScenarioSelect = React.useCallback(
-    (next: CompareScenarioId) => {
-      if (next === scenario) return;
-      trackEvent(
-        compareDrawerScenarioAnalyticsEvent(),
-        compareDrawerScenarioAnalyticsData(next, items.length),
-      );
-      setScenario(next);
-    },
-    [items.length, scenario],
-  );
-  const onRolloutPresetSelect = React.useCallback(
-    (preset: RolloutPresetId) => {
-      if (preset === rolloutPreset) return;
-      trackEvent(
-        compareDrawerDecisionPresetAnalyticsEvent(),
-        compareDrawerDecisionPresetAnalyticsData("rollout-readiness", preset, items.length),
-      );
-      setRolloutPreset(preset);
-    },
-    [items.length, rolloutPreset],
-  );
-  const onFitPresetSelect = React.useCallback(
-    (preset: OperationalFitPresetId) => {
-      if (preset === fitPreset) return;
-      trackEvent(
-        compareDrawerDecisionPresetAnalyticsEvent(),
-        compareDrawerDecisionPresetAnalyticsData("operational-fit", preset, items.length),
-      );
-      setFitPreset(preset);
-    },
-    [fitPreset, items.length],
-  );
-  const onRiskPresetSelect = React.useCallback(
-    (preset: DeploymentRiskPresetId) => {
-      if (preset === riskPreset) return;
-      trackEvent(
-        compareDrawerDecisionPresetAnalyticsEvent(),
-        compareDrawerDecisionPresetAnalyticsData("deployment-risk", preset, items.length),
-      );
-      setRiskPreset(preset);
-    },
-    [items.length, riskPreset],
-  );
-  const onMitigationPresetSelect = React.useCallback(
-    (preset: MitigationPriorityPresetId) => {
-      if (preset === mitigationPreset) return;
-      trackEvent(
-        compareDrawerDecisionPresetAnalyticsEvent(),
-        compareDrawerDecisionPresetAnalyticsData("mitigation-priority", preset, items.length),
-      );
-      setMitigationPreset(preset);
-    },
-    [items.length, mitigationPreset],
-  );
-
-  const onSnippetVariantSelect = React.useCallback(
-    (variant: CopyVariant) => {
-      trackEvent(
-        compareDrawerSnippetVariantAnalyticsEvent(),
-        compareDrawerSnippetVariantAnalyticsData(variant, items.length),
-      );
-    },
-    [items.length],
-  );
+  const { items, open, setOpen, toggle, clear, hydrate, getShareUrl } = useCompare();
+  const actionRowDiverges = compareDrawerActionsDiverge(items);
+  const bannerTexts = compareDrawerBannerTexts(items);
+  const fullViewSearch = compareFullViewSearch(items);
 
   const onClear = () => {
     const snapshot = items.map((e) => `${e.category}/${e.slug}`).join(",");
     if (!snapshot) return clear();
-    const clearedCount = items.length;
-    trackEvent(compareDrawerClearAnalyticsEvent(), compareDrawerClearAnalyticsData(clearedCount));
     clear();
     toast("Compare cleared", {
-      description: `${clearedCount} item${clearedCount === 1 ? "" : "s"} removed`,
+      description: `${items.length} item${items.length === 1 ? "" : "s"} removed`,
       action: {
         label: "Undo",
         onClick: () => {
           hydrate(snapshot);
           setOpen(true);
-          trackEvent(
-            compareDrawerUndoRestoreAnalyticsEvent(),
-            compareDrawerUndoRestoreAnalyticsData(clearedCount),
-          );
         },
       },
     });
   };
 
   const onRemove = (e: Entry) => {
-    const remainingCount = items.filter((item) => !sameEntry(item, e)).length;
-    trackEvent(
-      compareDrawerRemoveAnalyticsEvent(),
-      compareDrawerRemoveAnalyticsData(e.category, e.slug, remainingCount),
-    );
     toggle(e);
     toast(`Removed “${e.title}” from compare`);
-  };
-
-  const onOpenDossier = (entry: Entry) => {
-    trackEvent(
-      compareDrawerOpenDossierAnalyticsEvent(),
-      compareDrawerOpenDossierAnalyticsData(entry.category, entry.slug),
-    );
-  };
-
-  const onOpenFullView = () => {
-    trackEvent(
-      compareDrawerFullViewAnalyticsEvent(),
-      compareDrawerFullViewAnalyticsData(items.length),
-    );
-    setOpen(false);
   };
 
   return (
@@ -593,9 +363,6 @@ export function CompareDrawer() {
                 ))}
               </div>
             ) : null}
-            {singleItemHint ? (
-              <p className="w-full text-xs text-ink-muted">{singleItemHint}</p>
-            ) : null}
             <div className="flex flex-wrap items-center gap-2">
               {items.length > 0 && (
                 <div className="hidden items-center gap-1.5 sm:flex">
@@ -617,7 +384,6 @@ export function CompareDrawer() {
                       { id: "full", label: "Full", value: items.find((e) => e.fullCopy)?.fullCopy },
                     ]}
                     hideCopy
-                    onVariantSelect={onSnippetVariantSelect}
                   />
                 </div>
               )}
@@ -625,18 +391,16 @@ export function CompareDrawer() {
                 <Link
                   to="/compare"
                   search={fullViewSearch}
-                  onClick={onOpenFullView}
+                  onClick={() => setOpen(false)}
                   className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-xs text-ink hover:bg-surface-2"
                 >
                   Open full view <ArrowRight className="h-3 w-3" />
                 </Link>
               ) : null}
               <CopyButton
-                value={shareUrl}
+                value={getShareUrl()}
                 label="Copy compare link"
                 disabled={items.length === 0}
-                event={compareDrawerShareLinkCopyAnalyticsEvent()}
-                eventData={compareDrawerShareLinkCopyAnalyticsData(items.length)}
               />
               <button
                 type="button"
@@ -651,62 +415,10 @@ export function CompareDrawer() {
 
         {items.length === 0 ? (
           <div className="flex h-[60vh] items-center justify-center px-6 text-sm text-ink-muted">
-            {emptyHint}
+            {compareDrawerEmptyHint()}
           </div>
         ) : (
           <div className="h-[calc(88vh-57px)] overflow-auto">
-            <CompareDecisionBriefPanel
-              state={decisionBrief}
-              surface={compareDrawerDecisionBriefSurface()}
-              compact
-              className="m-3"
-            />
-            <CompareScenarioRankingPanel
-              state={scenarioRanking}
-              surface={compareDrawerScenarioSurface()}
-              selectedScenario={scenario}
-              onSelectScenario={onScenarioSelect}
-              compact
-              className="mx-3"
-            />
-            <CompareEvidenceGapsPanel
-              state={evidenceGaps}
-              surface={compareDrawerEvidenceGapsSurface()}
-              compact
-              className="m-3 mt-0"
-            />
-            <CompareRolloutReadinessPanel
-              state={rolloutReadiness}
-              surface={compareDrawerDecisionPresetSurface("rollout-readiness")}
-              selectedPreset={rolloutPreset}
-              onSelectPreset={onRolloutPresetSelect}
-              compact
-              className="m-3 mt-0"
-            />
-            <CompareOperationalFitHeatmapPanel
-              state={operationalFitHeatmap}
-              surface={compareDrawerDecisionPresetSurface("operational-fit")}
-              selectedPreset={fitPreset}
-              onSelectPreset={onFitPresetSelect}
-              compact
-              className="m-3 mt-0"
-            />
-            <CompareDeploymentRiskMapPanel
-              state={deploymentRiskMap}
-              surface={compareDrawerDecisionPresetSurface("deployment-risk")}
-              selectedPreset={riskPreset}
-              onSelectPreset={onRiskPresetSelect}
-              compact
-              className="m-3 mt-0"
-            />
-            <CompareMitigationPriorityPanel
-              state={mitigationPriority}
-              surface={compareDrawerDecisionPresetSurface("mitigation-priority")}
-              selectedPreset={mitigationPreset}
-              onSelectPreset={onMitigationPresetSelect}
-              compact
-              className="m-3 mt-0"
-            />
             <div className="min-w-full">
               <table className="w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-10 bg-surface">
@@ -729,7 +441,6 @@ export function CompareDrawer() {
                             <Link
                               to="/entry/$category/$slug"
                               params={{ category: e.category, slug: e.slug }}
-                              onClick={() => onOpenDossier(e)}
                               className="min-w-0 font-display text-sm font-semibold text-ink hover:underline"
                             >
                               {e.title}
@@ -747,7 +458,6 @@ export function CompareDrawer() {
                         <Link
                           to="/entry/$category/$slug"
                           params={{ category: e.category, slug: e.slug }}
-                          onClick={() => onOpenDossier(e)}
                           className="mt-1 inline-flex items-center gap-1 text-[11px] text-ink-muted hover:text-ink"
                         >
                           Open dossier <ArrowRight className="h-3 w-3" />
@@ -785,12 +495,12 @@ export function CompareDrawer() {
                           actionRowDiverges && "bg-amber-500/5",
                         )}
                       >
-                        <DrawerCompareActions entry={e} actionCells={actionCells} />
+                        <DrawerCompareActions entry={e} />
                       </td>
                     ))}
                   </tr>
                   {ROWS.map((row, i) => {
-                    const rowDiverges = divergingDecisionLabels.has(row.label);
+                    const rowDiverges = row.diverges?.(items) ?? false;
                     return (
                       <tr
                         key={row.label}

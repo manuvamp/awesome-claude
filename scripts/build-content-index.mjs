@@ -16,11 +16,6 @@ import {
   parseGitHubRepo,
 } from "@heyclaude/registry/content-builder";
 
-import { pickAtlasEntry } from "./lib/atlas-entry.mjs";
-import { artifactOutputPath } from "./lib/artifact-output-path.mjs";
-import { parseGitContentUpdatedAt } from "./lib/git-content-updated-at.mjs";
-import { entryRepoStatsEntry, pickRepoStats } from "./lib/entry-repo-stats.mjs";
-
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
 const contentRoot = path.join(repoRoot, "content");
@@ -174,6 +169,20 @@ function writeFileIfChanged(filePath, content) {
   return true;
 }
 
+function artifactOutputPath(artifactPath) {
+  const dataRoot = path.resolve(publicDataDir);
+  const outputPath = path.resolve(dataRoot, artifactPath);
+  const dataRootPrefix = `${dataRoot}${path.sep}`;
+
+  if (outputPath !== dataRoot && !outputPath.startsWith(dataRootPrefix)) {
+    throw new Error(
+      `Refusing to write artifact outside public data dir: ${artifactPath}`,
+    );
+  }
+
+  return outputPath;
+}
+
 function writeJsonFile(filePath, value) {
   ensureDir(path.dirname(filePath));
   return writeFileIfChanged(filePath, `${JSON.stringify(value)}\n`);
@@ -192,6 +201,155 @@ async function writePrettierJsonFile(filePath, value) {
   return writeFileIfChanged(filePath, formatted);
 }
 
+const ATLAS_CREDENTIAL_PLACEHOLDER_REPLACEMENTS = [
+  [
+    "postgresql://user:password@host:port/database",
+    "PostgreSQL connection URI with user, password, host, port, and database",
+  ],
+  [
+    "postgresql://user:password@localhost:5432/mydb",
+    "PostgreSQL connection URI stored in POSTGRES_CONNECTION_STRING",
+  ],
+  [
+    "redis://user:password@host:port/db",
+    "Redis connection URI with user, password, host, port, and database",
+  ],
+  [
+    "redis://:password@host:6379",
+    "Redis connection URI with password authentication",
+  ],
+  [
+    "redis://username:password@host:6379",
+    "Redis connection URI with ACL username and password authentication",
+  ],
+];
+
+function scrubAtlasCredentialPlaceholders(value) {
+  if (typeof value === "string") {
+    let scrubbed = value;
+    for (const [
+      placeholder,
+      replacement,
+    ] of ATLAS_CREDENTIAL_PLACEHOLDER_REPLACEMENTS) {
+      scrubbed = scrubbed.split(placeholder).join(replacement);
+    }
+    return scrubbed;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => scrubAtlasCredentialPlaceholders(item));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        scrubAtlasCredentialPlaceholders(item),
+      ]),
+    );
+  }
+
+  return value;
+}
+
+function pickAtlasEntry(entry) {
+  const repoStats =
+    entry.repoUrl ||
+    entry.githubStars != null ||
+    entry.githubForks != null ||
+    entry.repoUpdatedAt
+      ? {
+          repository: entry.repoUrl
+            ? entry.repoUrl.replace(/^https:\/\/github\.com\//, "")
+            : undefined,
+          url: entry.repoUrl || undefined,
+          stars: entry.githubStars,
+          forks: entry.githubForks,
+          updatedAt: entry.repoUpdatedAt,
+          appliesTo: entry.repoUrl ? "listing_source_repo" : "none",
+          label: "Source repo",
+        }
+      : undefined;
+
+  return scrubAtlasCredentialPlaceholders({
+    category: entry.category,
+    slug: entry.slug,
+    title: entry.title,
+    description: entry.description,
+    seoTitle: entry.seoTitle,
+    seoDescription: entry.seoDescription,
+    author: entry.author,
+    submittedBy: entry.submittedBy,
+    submittedByUrl: entry.submittedByUrl,
+    submittedAt: entry.submittedAt,
+    sourceSubmissionUrl: entry.sourceSubmissionUrl,
+    importPrUrl: entry.importPrUrl,
+    reviewedBy: entry.reviewedBy,
+    reviewedAt: entry.reviewedAt,
+    claimStatus: entry.claimStatus,
+    authorProfileUrl: entry.authorProfileUrl,
+    dateAdded: entry.dateAdded,
+    contentUpdatedAt: entry.contentUpdatedAt,
+    tags: entry.tags,
+    keywords: entry.keywords,
+    cardDescription: entry.cardDescription,
+    installCommand: entry.installCommand,
+    configSnippet: entry.configSnippet,
+    usageSnippet: entry.usageSnippet,
+    documentationUrl: entry.documentationUrl,
+    githubUrl: entry.githubUrl,
+    repoUrl: entry.repoUrl,
+    brandName: entry.brandName,
+    brandDomain: entry.brandDomain,
+    brandIconUrl: entry.brandIconUrl,
+    prerequisites: entry.prerequisites,
+    safetyNotes: entry.safetyNotes,
+    privacyNotes: entry.privacyNotes,
+    downloadUrl: entry.downloadUrl,
+    downloadSha256: entry.downloadSha256,
+    packageVerified: entry.packageVerified,
+    downloadTrust: entry.downloadTrust,
+    githubStars: entry.githubStars,
+    githubForks: entry.githubForks,
+    repoUpdatedAt: entry.repoUpdatedAt,
+    repoStats,
+    trustSignals: entry.trustSignals
+      ? {
+          firstPartyEditorial: entry.trustSignals.firstPartyEditorial,
+          sourceStatus: entry.trustSignals.sourceStatus,
+          lastVerifiedAt: entry.trustSignals.lastVerifiedAt,
+          platforms: entry.trustSignals.platforms,
+          supportLevels: entry.trustSignals.supportLevels,
+        }
+      : undefined,
+    platformCompatibility: entry.platformCompatibility,
+    commandSyntax: entry.commandSyntax,
+    argumentHint: entry.argumentHint,
+    allowedTools: entry.allowedTools,
+    scriptLanguage: entry.scriptLanguage,
+    trigger: entry.trigger,
+    items: entry.items,
+    installationOrder: entry.installationOrder,
+    estimatedSetupTime: entry.estimatedSetupTime,
+    difficulty: entry.difficulty,
+    skillType: entry.skillType,
+    skillLevel: entry.skillLevel,
+    verificationStatus: entry.verificationStatus,
+    verifiedAt: entry.verifiedAt,
+    retrievalSources: entry.retrievalSources,
+    testedPlatforms: entry.testedPlatforms,
+    pricingModel: entry.pricingModel,
+    disclosure: entry.disclosure,
+    applicationCategory: entry.applicationCategory,
+    operatingSystem: entry.operatingSystem,
+    readingTime: entry.readingTime,
+    difficultyScore: entry.difficultyScore,
+    hasPrerequisites: entry.hasPrerequisites,
+    hasTroubleshooting: entry.hasTroubleshooting,
+    hasBreakingChanges: entry.hasBreakingChanges,
+  });
+}
+
 function writeTextFile(filePath, value) {
   ensureDir(path.dirname(filePath));
   return writeFileIfChanged(
@@ -201,17 +359,39 @@ function writeTextFile(filePath, value) {
 }
 
 function loadGitContentUpdatedAt() {
+  const values = new Map();
+
   try {
     const output = execFileSync(
       "git",
       ["log", "--format=@@heyclaude:%cI", "--name-only", "--", "content"],
       { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     );
-    return parseGitContentUpdatedAt(output);
+    let commitUpdatedAt = null;
+
+    for (const line of output.split("\n")) {
+      if (line.startsWith("@@heyclaude:")) {
+        commitUpdatedAt = line.slice("@@heyclaude:".length).trim() || null;
+        continue;
+      }
+
+      const relativePath = line.trim();
+      if (
+        !commitUpdatedAt ||
+        !relativePath.startsWith("content/") ||
+        !relativePath.endsWith(".mdx") ||
+        values.has(relativePath)
+      ) {
+        continue;
+      }
+
+      values.set(relativePath, commitUpdatedAt);
+    }
   } catch {
     // Keep registry generation usable outside a Git checkout.
-    return new Map();
   }
+
+  return values;
 }
 
 function loadExistingEntryRepoStats() {
@@ -229,8 +409,22 @@ function loadExistingEntryRepoStats() {
         const payload = JSON.parse(
           fs.readFileSync(path.join(categoryDir, fileName), "utf8"),
         );
-        const statsEntry = entryRepoStatsEntry(payload);
-        if (statsEntry) values.set(statsEntry[0], statsEntry[1]);
+        const entry = payload?.entry;
+        if (!entry?.category || !entry?.slug) continue;
+        values.set(`${entry.category}:${entry.slug}`, {
+          stars:
+            typeof entry.githubStars === "number"
+              ? entry.githubStars
+              : undefined,
+          forks:
+            typeof entry.githubForks === "number"
+              ? entry.githubForks
+              : undefined,
+          updatedAt:
+            typeof entry.repoUpdatedAt === "string"
+              ? entry.repoUpdatedAt
+              : undefined,
+        });
       } catch {
         // Regeneration should not fail just because a stale artifact is invalid.
       }
@@ -244,7 +438,21 @@ function loadExistingSiteStats() {
   if (!fs.existsSync(siteStatsFile)) return null;
 
   try {
-    return pickRepoStats(JSON.parse(fs.readFileSync(siteStatsFile, "utf8")));
+    const payload = JSON.parse(fs.readFileSync(siteStatsFile, "utf8"));
+    return {
+      stars:
+        typeof payload.githubStars === "number"
+          ? payload.githubStars
+          : undefined,
+      forks:
+        typeof payload.githubForks === "number"
+          ? payload.githubForks
+          : undefined,
+      updatedAt:
+        typeof payload.repoUpdatedAt === "string"
+          ? payload.repoUpdatedAt
+          : undefined,
+    };
   } catch {
     return null;
   }
@@ -379,7 +587,7 @@ async function main() {
       "The Claude directory for agents, MCP servers, skills, commands, hooks, rules, guides, collections, and statuslines.",
   });
   const artifactResults = artifactFiles.map((file) => {
-    const outputPath = artifactOutputPath(file.path, publicDataDir);
+    const outputPath = artifactOutputPath(file.path);
     const wrote =
       file.type === "json"
         ? writeJsonFile(outputPath, file.value)
