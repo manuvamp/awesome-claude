@@ -83,7 +83,7 @@ export function TopBar() {
           aria-label="Open menu"
           aria-expanded={mobileNavOpen}
           aria-controls="mobile-primary-nav"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-surface text-ink-muted hover:text-ink lg:hidden"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-surface text-ink-muted hover:text-ink md:hidden"
         >
           <Menu className="h-4 w-4" />
         </button>
@@ -103,12 +103,7 @@ export function TopBar() {
           </span>
         </Link>
 
-        {/*
-          lg, not md: the six primary links measure ~420px, which together with
-          the logo and the action cluster overran the 768px row and scrolled the
-          whole page sideways. Below lg they live in the hamburger sheet.
-        */}
-        <nav aria-label="Primary" className="hidden items-center gap-1 lg:flex">
+        <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
           {SHELL_PRIMARY_NAV.map((item) => {
             const active = shellNavItemActive(pathname, item.to);
             return (
@@ -139,24 +134,9 @@ export function TopBar() {
           })}
         </nav>
 
-        {/*
-          No min-w-0 here on purpose: the cluster must keep its intrinsic width
-          so the icon buttons and Submit CTA never collapse into each other.
-          Only the search slot inside it is allowed to shrink.
-        */}
-        <div className="ml-auto flex flex-1 items-center justify-end gap-2">
+        <div className="ml-auto flex flex-1 items-center justify-end gap-2 md:max-w-md">
           {!isHome && (
-            // Capped on the search itself rather than on the whole right cluster:
-            // a cluster-wide cap left the input (and its dropdown, which tracks
-            // the input's width) around 200px, crushing the scope chips and
-            // truncating result titles.
-            //
-            // On from sm (nav is in the hamburger, so the row is free), off at
-            // lg where the ~420px nav appears and leaves too little for a usable
-            // input, back on at xl where nav + search + actions all fit. Forcing
-            // an input into the lg band pushed the action buttons past the row
-            // and scrolled the whole page sideways.
-            <div className="hidden min-w-0 flex-1 sm:block lg:hidden xl:block xl:max-w-md">
+            <div className="hidden flex-1 sm:block">
               <CommandBar size="md" showHint={false} />
             </div>
           )}
