@@ -10,10 +10,9 @@ import {
   ChevronDown,
   MessageSquareWarning,
 } from "lucide-react";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { CATEGORIES } from "@/types/registry";
 import { ENTRIES, QUALITY_STATS } from "@/data/entries";
-import { scoreEntry, type QualityRow } from "@/lib/quality-score-lib";
 import { ARTIFACT_CONTRACTS, CHANGELOG } from "@/data/changelog";
 import { FeedHealthPanel } from "@/components/feed-health-panel";
 import { CountUp } from "@/components/count-up";
@@ -21,37 +20,7 @@ import { PageContainer } from "@/components/page-container";
 import { PageHeader } from "@/components/page-header";
 import { NewsletterInline } from "@/components/newsletter-inline";
 import { entryRef } from "@/lib/entry-identity";
-import { trackEvent } from "@/lib/analytics";
-import {
-  qualityQueueEntryAnalyticsData,
-  qualityQueueEntryAnalyticsEvent,
-  type QualityQueueId,
-} from "@/lib/insights-page-entry-cta-events";
-import {
-  qualityPageCategoryBrowseAnalyticsData,
-  qualityPageCategoryBrowseAnalyticsEvent,
-  qualityPageCategoryBrowseDestination,
-  qualityPageChangelogAnalyticsData,
-  qualityPageChangelogAnalyticsEvent,
-  qualityPageChromeDestination,
-  qualityPageClaimAnalyticsData,
-  qualityPageClaimAnalyticsEvent,
-  qualityPageIssueAnalyticsData,
-  qualityPageIssueAnalyticsEvent,
-  qualityPageMethodToggleAnalyticsData,
-  qualityPageMethodToggleAnalyticsEvent,
-  qualityPageQueueEntryDestination,
-  qualityPageStatAnalyticsData,
-  qualityPageStatAnalyticsEvent,
-  qualityPageStatDestination,
-  type QualityMethodId,
-  type QualityPageStatId,
-} from "@/lib/quality-page-cta-events";
 import { cn } from "@/lib/utils";
-
-const QUALITY_METHOD_COUNT = 5;
-
-const CHANGELOG_PREVIEW_COUNT = 6;
 
 export const Route = createFileRoute("/quality")({
   head: () => ({
@@ -78,6 +47,51 @@ export const Route = createFileRoute("/quality")({
   }),
   component: QualityPage,
 });
+
+interface QualityRow {
+  entry: (typeof ENTRIES)[number];
+  score: number;
+  recommendations: string[];
+}
+
+function scoreEntry(e: (typeof ENTRIES)[number]): QualityRow {
+  const recs: string[] = [];
+  let score = 100;
+  if (e.source === "unverified") {
+    score -= 30;
+    recs.push("Add a verifiable source URL.");
+  }
+  if (
+    !e.safetyNotes &&
+    (e.category === "mcp" ||
+      e.category === "hooks" ||
+      e.category === "skills" ||
+      e.category === "commands")
+  ) {
+    score -= 20;
+    recs.push("Add safety notes for this risk-bearing category.");
+  }
+  if (!e.privacyNotes && (e.category === "mcp" || e.category === "skills")) {
+    score -= 10;
+    recs.push("Add privacy notes covering data flow.");
+  }
+  if (!e.reviewed) {
+    score -= 10;
+    recs.push("Awaiting maintainer review.");
+  }
+  if (
+    !e.installCommand &&
+    (e.category === "mcp" || e.category === "skills" || e.category === "commands")
+  ) {
+    score -= 10;
+    recs.push("Add an install command.");
+  }
+  if (!e.tags || e.tags.length < 2) {
+    score -= 5;
+    recs.push("Add more tags for discoverability.");
+  }
+  return { entry: e, score: Math.max(0, score), recommendations: recs };
+}
 
 // Precomputed once at module load — the registry is static, so these no longer
 // re-run (927× scoreEntry + sort + per-category scans, ~28K iterations) on every
@@ -127,27 +141,24 @@ function QualityPage() {
       </p>
 
       <div className="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border stagger-children sm:grid-cols-4">
-        <Stat icon={BadgeCheck} label="Total entries" value={total} percent={100} statId="total" />
+        <Stat icon={BadgeCheck} label="Total entries" value={total} percent={100} />
         <Stat
           icon={GitBranch}
           label="Source-backed"
           value={QUALITY_STATS.sourceBacked}
           percent={pct(QUALITY_STATS.sourceBacked)}
-          statId="source-backed"
         />
         <Stat
           icon={ShieldCheck}
           label="Safety notes present"
           value={QUALITY_STATS.withSafetyNotes}
           percent={pct(QUALITY_STATS.withSafetyNotes)}
-          statId="safety-notes"
         />
         <Stat
           icon={FileText}
           label="Reviewed by maintainer"
           value={QUALITY_STATS.reviewed}
           percent={pct(QUALITY_STATS.reviewed)}
-          statId="reviewed"
         />
       </div>
 
@@ -197,26 +208,13 @@ function QualityPage() {
 
       <h2 className="mt-12 h-display-2 text-ink text-balance">Coverage by category</h2>
       <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-surface">
-        {CATEGORIES.map((c, rowIndex) => {
+        {CATEGORIES.map((c) => {
           const cov = CATEGORY_COVERAGE.get(c.id)!;
-          const destination = qualityPageCategoryBrowseDestination(c.id);
-          if (!destination) return null;
           return (
             <Link
               key={c.id}
-              to={destination.to}
-              search={destination.search}
-              onClick={() =>
-                trackEvent(
-                  qualityPageCategoryBrowseAnalyticsEvent(),
-                  qualityPageCategoryBrowseAnalyticsData(
-                    c.id,
-                    cov.count,
-                    rowIndex,
-                    CATEGORIES.length,
-                  ),
-                )
-              }
+              to="/browse"
+              search={{ category: c.id }}
               className="grid grid-cols-[140px_1fr_110px_110px_110px_50px] items-center gap-4 border-b border-border px-5 py-3 text-sm last:border-0 hover:bg-surface-2"
             >
               <div className="font-display font-semibold text-ink">{c.label}</div>
@@ -234,13 +232,11 @@ function QualityPage() {
         <Queue
           title="Improvement queue"
           help="Lowest-scoring entries by completeness and trust signals."
-          queueId="improvement"
           rows={improvementQueue}
         />
         <Queue
           title="Trust queue"
           help="Solid entries with one or two recommendations."
-          queueId="trust"
           rows={trustQueue}
         />
       </div>
@@ -294,7 +290,7 @@ function QualityPage() {
             Additions, updates, and removals from the public registry feed.
           </p>
           <ol className="mt-4 overflow-hidden rounded-xl border border-border bg-surface">
-            {CHANGELOG.slice(0, CHANGELOG_PREVIEW_COUNT).map((c) => (
+            {CHANGELOG.slice(0, 6).map((c) => (
               <li
                 key={`${c.date}-${c.ref}`}
                 className="flex items-start gap-3 border-b border-border px-4 py-3 last:border-0"
@@ -319,24 +315,12 @@ function QualityPage() {
               </li>
             ))}
           </ol>
-          {(() => {
-            const destination = qualityPageChromeDestination("changelog");
-            if (!destination || destination.kind !== "route") return null;
-            return (
-              <Link
-                to={destination.to}
-                onClick={() =>
-                  trackEvent(
-                    qualityPageChangelogAnalyticsEvent(),
-                    qualityPageChangelogAnalyticsData(CHANGELOG_PREVIEW_COUNT),
-                  )
-                }
-                className="mt-3 inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink"
-              >
-                Full changelog →
-              </Link>
-            );
-          })()}
+          <Link
+            to="/changelog"
+            className="mt-3 inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink"
+          >
+            Full changelog →
+          </Link>
         </div>
 
         <div className="min-w-0">
@@ -346,27 +330,22 @@ function QualityPage() {
           </p>
           <div className="mt-4 space-y-2">
             <Method
-              methodId="source-backed"
               label="Source-backed"
               detail="A verifiable source URL (repo, package registry, official docs) that matches the claimed author."
             />
             <Method
-              methodId="safety-notes"
               label="Safety notes"
               detail="Required for MCP, hooks, skills, and commands — anything that runs code, touches files, or holds credentials."
             />
             <Method
-              methodId="privacy-notes"
               label="Privacy notes"
               detail="Required for MCP and skills — covers what data leaves your machine."
             />
             <Method
-              methodId="reviewed"
               label="Reviewed"
               detail="A maintainer has eyeballed the metadata. Not a code audit, not a runtime sandbox."
             />
             <Method
-              methodId="install-command"
               label="Install command"
               detail="An exact, copyable command. We do not run it for you."
             />
@@ -389,38 +368,20 @@ function QualityPage() {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          {(() => {
-            const destination = qualityPageChromeDestination("claim");
-            if (!destination || destination.kind !== "route") return null;
-            return (
-              <Link
-                to={destination.to}
-                onClick={() =>
-                  trackEvent(qualityPageClaimAnalyticsEvent(), qualityPageClaimAnalyticsData())
-                }
-                className="inline-flex h-10 items-center rounded-md bg-accent px-4 text-sm font-semibold text-accent-ink hover:opacity-90"
-              >
-                Claim a listing
-              </Link>
-            );
-          })()}
-          {(() => {
-            const destination = qualityPageChromeDestination("issues");
-            if (!destination || destination.kind !== "href") return null;
-            return (
-              <a
-                href={destination.href}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() =>
-                  trackEvent(qualityPageIssueAnalyticsEvent(), qualityPageIssueAnalyticsData())
-                }
-                className="inline-flex h-10 items-center rounded-md border border-background/30 px-4 text-sm font-medium hover:bg-background/10"
-              >
-                Open an issue
-              </a>
-            );
-          })()}
+          <Link
+            to="/claim"
+            className="inline-flex h-10 items-center rounded-md bg-accent px-4 text-sm font-semibold text-accent-ink hover:opacity-90"
+          >
+            Claim a listing
+          </Link>
+          <a
+            href="https://github.com/jsonbored/awesome-claude/issues"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-10 items-center rounded-md border border-background/30 px-4 text-sm font-medium hover:bg-background/10"
+          >
+            Open an issue
+          </a>
         </div>
       </div>
 
@@ -445,31 +406,14 @@ function MethodologyCard({ id, title, body }: { id: string; title: string; body:
   );
 }
 
-function Method({
-  methodId,
-  label,
-  detail,
-}: {
-  methodId: QualityMethodId;
-  label: string;
-  detail: string;
-}) {
+function Method({ label, detail }: { label: string; detail: string }) {
   const [open, setOpen] = useState(false);
-  const detailId = useId();
   return (
     <button
       type="button"
-      onClick={() => {
-        const next = !open;
-        trackEvent(
-          qualityPageMethodToggleAnalyticsEvent(),
-          qualityPageMethodToggleAnalyticsData(methodId, next, QUALITY_METHOD_COUNT),
-        );
-        setOpen(next);
-      }}
+      onClick={() => setOpen((v) => !v)}
       className="w-full rounded-lg border border-border bg-surface p-3 text-left transition-colors duration-200 ease-out hover:bg-surface-2"
       aria-expanded={open}
-      aria-controls={detailId}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-ink">{label}</span>
@@ -477,11 +421,7 @@ function Method({
           className={cn("h-4 w-4 text-ink-subtle transition-transform", open && "rotate-180")}
         />
       </div>
-      {open && (
-        <p id={detailId} className="mt-2 text-xs text-ink-muted">
-          {detail}
-        </p>
-      )}
+      {open && <p className="mt-2 text-xs text-ink-muted">{detail}</p>}
     </button>
   );
 }
@@ -491,28 +431,14 @@ function Stat({
   label,
   value,
   percent,
-  statId,
 }: {
   icon: React.ElementType;
   label: string;
   value: number;
   percent: number;
-  statId: QualityPageStatId;
 }) {
-  const destination = qualityPageStatDestination(statId);
-  if (!destination) return null;
   return (
-    <Link
-      to={destination.to}
-      search={destination.search}
-      onClick={() =>
-        trackEvent(
-          qualityPageStatAnalyticsEvent(),
-          qualityPageStatAnalyticsData(statId, value, percent),
-        )
-      }
-      className="block bg-surface p-5 transition-colors duration-200 ease-out hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
-    >
+    <div className="bg-surface p-5">
       <div className="flex items-center justify-between">
         <Icon className="h-4 w-4 text-ink-muted" />
         <span className="font-mono text-xs tabular-nums text-ink-subtle">{percent}%</span>
@@ -524,7 +450,7 @@ function Stat({
         <div className="text-xs text-ink-muted">{label}</div>
         <span className="font-mono text-[11px] text-ink-subtle">current snapshot</span>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -542,17 +468,7 @@ function Bar({ label, pct }: { label: string; pct: number }) {
   );
 }
 
-function Queue({
-  title,
-  help,
-  queueId,
-  rows,
-}: {
-  title: string;
-  help: string;
-  queueId: QualityQueueId;
-  rows: QualityRow[];
-}) {
+function Queue({ title, help, rows }: { title: string; help: string; rows: QualityRow[] }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface">
       <div className="border-b border-border px-5 py-3">
@@ -560,50 +476,30 @@ function Queue({
         <p className="text-xs text-ink-muted">{help}</p>
       </div>
       <ul>
-        {rows.map((r, rowIndex) => {
-          const destination = qualityPageQueueEntryDestination(r.entry.category, r.entry.slug);
-          return (
-            <li key={entryRef(r.entry)} className="border-b border-border px-5 py-3 last:border-0">
-              <div className="flex items-center justify-between gap-3">
-                {destination ? (
-                  <Link
-                    to={destination.to}
-                    params={destination.params}
-                    onClick={() =>
-                      trackEvent(
-                        qualityQueueEntryAnalyticsEvent(),
-                        qualityQueueEntryAnalyticsData(
-                          r.entry.category,
-                          r.entry.slug,
-                          queueId,
-                          r.score,
-                          rowIndex,
-                          rows.length,
-                        ),
-                      )
-                    }
-                    className="truncate text-sm font-medium text-ink hover:underline"
-                  >
-                    {r.entry.title}
-                  </Link>
-                ) : (
-                  <span className="truncate text-sm font-medium text-ink">{r.entry.title}</span>
-                )}
-                <span className="shrink-0 font-mono text-xs text-ink-subtle">{r.score}/100</span>
-              </div>
-              {r.recommendations.length > 0 && (
-                <ul className="mt-1 space-y-0.5 text-[11px] text-ink-muted">
-                  {r.recommendations.slice(0, 2).map((rec, i) => (
-                    <li key={i} className="flex items-start gap-1.5">
-                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-trust-review" />
-                      {rec}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          );
-        })}
+        {rows.map((r) => (
+          <li key={entryRef(r.entry)} className="border-b border-border px-5 py-3 last:border-0">
+            <div className="flex items-center justify-between gap-3">
+              <Link
+                to="/entry/$category/$slug"
+                params={{ category: r.entry.category, slug: r.entry.slug }}
+                className="truncate text-sm font-medium text-ink hover:underline"
+              >
+                {r.entry.title}
+              </Link>
+              <span className="shrink-0 font-mono text-xs text-ink-subtle">{r.score}/100</span>
+            </div>
+            {r.recommendations.length > 0 && (
+              <ul className="mt-1 space-y-0.5 text-[11px] text-ink-muted">
+                {r.recommendations.slice(0, 2).map((rec, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-trust-review" />
+                    {rec}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
       </ul>
     </div>
   );

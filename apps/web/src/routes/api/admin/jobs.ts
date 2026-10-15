@@ -17,7 +17,6 @@ import { logApiError, logApiInfo, logApiWarn } from "@/lib/api-logs";
 import { getSiteDb } from "@/lib/db";
 import {
   checkJobsSchema,
-  JobInvalidTransitionError,
   JobNotFoundError,
   JobPublicationQualityError,
   queryAdminJobs,
@@ -139,20 +138,6 @@ export const PATCH = createApiHandler("adminJobs.update", async ({ request, body
       return apiError("job_quality_gate_failed", 400, {
         requestId,
         details: caught.errors,
-      });
-    }
-    if (caught instanceof JobInvalidTransitionError) {
-      logApiWarn(request, "admin.jobs.invalid_transition", {
-        slug: payload.slug,
-        action: payload.action,
-        currentStatus: caught.currentStatus,
-      });
-      return apiError("invalid_transition", 400, {
-        requestId,
-        details: {
-          action: caught.action,
-          currentStatus: caught.currentStatus,
-        },
       });
     }
     if (caught instanceof JobNotFoundError) {

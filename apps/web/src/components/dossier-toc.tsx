@@ -1,10 +1,4 @@
 import { useScrollSpy } from "@/hooks/use-scroll-spy";
-import { trackEvent } from "@/lib/analytics";
-import {
-  DOSSIER_TOC_DETAIL_RAIL_SURFACE,
-  dossierTocSectionAnalyticsData,
-  dossierTocSectionAnalyticsEvent,
-} from "@/lib/dossier-toc-cta-events";
 import { cn } from "@/lib/utils";
 
 export interface TocItem {
@@ -16,15 +10,7 @@ export interface TocItem {
  * Right-rail table of contents with scroll-spy. Sections referenced by id
  * should set `scroll-mt-24` so the sticky header doesn't clip the heading.
  */
-export function DossierTOC({
-  entry,
-  items,
-  className,
-}: {
-  entry: { category: string; slug: string };
-  items: TocItem[];
-  className?: string;
-}) {
+export function DossierTOC({ items, className }: { items: TocItem[]; className?: string }) {
   const ids = items.map((i) => i.id);
   const active = useScrollSpy(ids);
 
@@ -41,17 +27,6 @@ export function DossierTOC({
               <a
                 href={`#${item.id}`}
                 aria-current={isActive ? "true" : undefined}
-                onClick={() => {
-                  trackEvent(
-                    dossierTocSectionAnalyticsEvent(),
-                    dossierTocSectionAnalyticsData(
-                      entry.category,
-                      entry.slug,
-                      item.id,
-                      DOSSIER_TOC_DETAIL_RAIL_SURFACE,
-                    ),
-                  );
-                }}
                 className={cn(
                   "group flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
                   isActive

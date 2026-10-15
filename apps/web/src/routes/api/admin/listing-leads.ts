@@ -15,10 +15,40 @@ import {
 } from "@/lib/api/router";
 import { isLeadsAdminAuthorized } from "@/lib/admin-auth";
 import { logApiError, logApiInfo, logApiWarn } from "@/lib/api-logs";
-import { clampListingLeadsOffset, leadsToCsv, normalizeKind } from "@/lib/listing-leads-csv-lib";
+import { csvEscape } from "@/lib/csv";
 import { getSiteDb } from "@/lib/db";
 
+const ALLOWED_KINDS = new Set(["job", "tool", "claim"]);
 const MAX_LIMIT = 100;
+const CSV_COLUMNS = [
+  "id",
+  "kind",
+  "status",
+  "tier_interest",
+  "contact_name",
+  "contact_email",
+  "company_name",
+  "listing_title",
+  "website_url",
+  "apply_url",
+  "message",
+  "created_at",
+  "updated_at",
+] as const;
+
+function normalizeKind(value: string | null) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return ALLOWED_KINDS.has(normalized) ? normalized : "";
+}
+
+function leadsToCsv(rows: Record<string, unknown>[]) {
+  return [
+    CSV_COLUMNS.join(","),
+    ...rows.map((row) => CSV_COLUMNS.map((column) => csvEscape(row[column])).join(",")),
+  ].join("\n");
+}
 
 export const GET = createApiHandler(
   "adminListingLeads.list",
@@ -38,7 +68,6 @@ export const GET = createApiHandler(
     const kind = normalizeKind(query.kind);
     const status = normalizeCommercialStatus(query.status);
     const limit = Math.max(1, Math.min(MAX_LIMIT, Math.trunc(query.limit)));
-    const offset = clampListingLeadsOffset(query.offset);
     const format = query.format;
 
     const where = [];
@@ -72,9 +101,9 @@ export const GET = createApiHandler(
       FROM listing_leads
       ${whereSql}
       ORDER BY created_at DESC
-      LIMIT ? OFFSET ?`,
+      LIMIT ?`,
       )
-      .bind(...values, limit, offset)
+      .bind(...values, limit)
       .all();
 
     if (format === "csv") {
@@ -133,23 +162,10 @@ export const PATCH = createApiHandler(
       return apiError("invalid_transition", 400, { requestId });
     }
 
-    // Condition the write on the status we just read so a concurrent PATCH
-    // cannot silently overwrite a different transition (lost-update race).
-    const result = await db
-      .prepare(
-        "UPDATE listing_leads SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ?",
-      )
-      .bind(nextStatus, id, current.status)
+    await db
+      .prepare("UPDATE listing_leads SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(nextStatus, id)
       .run();
-
-    if (Number(result.meta?.changes ?? 0) === 0) {
-      logApiWarn(request, "admin.listing_leads.status_conflict", {
-        id,
-        from: current.status,
-        attempted: nextStatus,
-      });
-      return apiError("conflict", 409, { requestId });
-    }
 
     logApiInfo(request, "admin.listing_leads.status_updated", {
       id,

@@ -8,28 +8,8 @@ import {
   BadgeCheck,
   type LucideIcon,
 } from "lucide-react";
-import { TrustBadge, SourceBadge, InstallRiskBadge, NotesPresenceChips } from "@/components/badges";
+import { TrustBadge, SourceBadge } from "@/components/badges";
 import type { Highlight, HighlightKind, HubStat } from "@/lib/hub-highlights";
-import { trackEvent } from "@/lib/analytics";
-import {
-  hubHighlightEntryAnalyticsData,
-  hubHighlightEntryAnalyticsEvent,
-  hubHighlightSourceBrowseAnalyticsData,
-  hubHighlightSourceBrowseAnalyticsEvent,
-  hubEntryDestination,
-} from "@/lib/hub-entry-cta-events";
-import {
-  badgeChromeTrustAnalyticsData,
-  badgeChromeTrustAnalyticsEvent,
-} from "@/lib/badge-chrome-cta-events";
-import {
-  hubSignalStatAnalyticsData,
-  hubSignalStatAnalyticsEvent,
-  hubSignalStatDestination,
-  type HubSignalStatDestination,
-  type HubSignalSurface,
-} from "@/lib/hub-signal-cta-events";
-import { cn } from "@/lib/utils";
 
 const HIGHLIGHT_ICON: Record<HighlightKind, LucideIcon> = {
   trusted: ShieldCheck,
@@ -62,73 +42,26 @@ export function HubHighlights({
       <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {highlights.map((h) => {
           const Icon = HIGHLIGHT_ICON[h.kind];
-          const entryDestination = hubEntryDestination(h.entry.category, h.entry.slug);
           return (
             <li key={`${h.kind}-${h.entry.category}/${h.entry.slug}`}>
-              <div className="group flex h-full flex-col rounded-xl border border-border bg-surface p-4 transition-colors hover:border-ink/20 hover:bg-surface-2">
-                {entryDestination ? (
-                  <Link
-                    to={entryDestination.to}
-                    params={entryDestination.params}
-                    onClick={() =>
-                      trackEvent(
-                        hubHighlightEntryAnalyticsEvent(),
-                        hubHighlightEntryAnalyticsData(
-                          h.entry.category,
-                          h.entry.slug,
-                          h.kind,
-                          highlights.length,
-                        ),
-                      )
-                    }
-                    className="flex flex-1 flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded-sm"
-                  >
-                    <div className="flex items-center gap-1.5 eyebrow">
-                      <Icon className="h-3.5 w-3.5 text-accent" aria-hidden />
-                      {h.label}
-                    </div>
-                    <div className="mt-2 font-display text-sm font-semibold text-ink group-hover:underline">
-                      {h.entry.title}
-                    </div>
-                    <p className="mt-1 flex-1 text-xs text-ink-muted">{h.reason}</p>
-                  </Link>
-                ) : (
-                  <div className="flex flex-1 flex-col">
-                    <div className="flex items-center gap-1.5 eyebrow">
-                      <Icon className="h-3.5 w-3.5 text-accent" aria-hidden />
-                      {h.label}
-                    </div>
-                    <div className="mt-2 font-display text-sm font-semibold text-ink">
-                      {h.entry.title}
-                    </div>
-                    <p className="mt-1 flex-1 text-xs text-ink-muted">{h.reason}</p>
-                  </div>
-                )}
-                <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <TrustBadge
-                    level={h.entry.trust}
-                    asLink
-                    onNavigate={() =>
-                      trackEvent(
-                        badgeChromeTrustAnalyticsEvent(),
-                        badgeChromeTrustAnalyticsData(h.entry.trust, "hub-highlights"),
-                      )
-                    }
-                  />
-                  <SourceBadge
-                    status={h.entry.source}
-                    asLink
-                    onNavigate={() =>
-                      trackEvent(
-                        hubHighlightSourceBrowseAnalyticsEvent(),
-                        hubHighlightSourceBrowseAnalyticsData(h.entry.source, h.kind),
-                      )
-                    }
-                  />
-                  <InstallRiskBadge entry={h.entry} size="xs" asLink surface="hub-highlights" />
-                  <NotesPresenceChips entry={h.entry} asLink surface="hub-highlights" />
+              <Link
+                to="/entry/$category/$slug"
+                params={{ category: h.entry.category, slug: h.entry.slug }}
+                className="group flex h-full flex-col rounded-xl border border-border bg-surface p-4 transition-colors hover:border-ink/20 hover:bg-surface-2"
+              >
+                <div className="flex items-center gap-1.5 eyebrow">
+                  <Icon className="h-3.5 w-3.5 text-accent" aria-hidden />
+                  {h.label}
                 </div>
-              </div>
+                <div className="mt-2 font-display text-sm font-semibold text-ink group-hover:underline">
+                  {h.entry.title}
+                </div>
+                <p className="mt-1 flex-1 text-xs text-ink-muted">{h.reason}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  <TrustBadge level={h.entry.trust} />
+                  <SourceBadge status={h.entry.source} />
+                </div>
+              </Link>
             </li>
           );
         })}
@@ -137,17 +70,9 @@ export function HubHighlights({
   );
 }
 
-function StatBar({
-  stat,
-  browseDestination,
-  surface,
-}: {
-  stat: HubStat;
-  browseDestination: HubSignalStatDestination | null;
-  surface?: HubSignalSurface;
-}) {
-  const body = (
-    <>
+function StatBar({ stat }: { stat: HubStat }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-medium text-ink-muted">{stat.label}</span>
         <span className="font-mono text-[11px] tabular-nums text-ink-subtle">{stat.pct}%</span>
@@ -158,30 +83,8 @@ function StatBar({
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2">
         <div className="h-full bg-ink" style={{ width: `${stat.pct}%` }} />
       </div>
-    </>
+    </div>
   );
-
-  if (browseDestination && surface) {
-    return (
-      <Link
-        to={browseDestination.to}
-        search={browseDestination.search}
-        onClick={() =>
-          trackEvent(
-            hubSignalStatAnalyticsEvent(),
-            hubSignalStatAnalyticsData(surface, stat.key, stat.count, stat.pct),
-          )
-        }
-        className={cn(
-          "block rounded-xl border border-border bg-surface p-4 transition-colors hover:border-ink/20 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
-        )}
-      >
-        {body}
-      </Link>
-    );
-  }
-
-  return <div className="rounded-xl border border-border bg-surface p-4">{body}</div>;
 }
 
 /**
@@ -189,17 +92,7 @@ function StatBar({
  * notes, review status. Every number is counted from the entries actually on the page,
  * so no two hubs render the same breakdown unless their data is genuinely identical.
  */
-export function HubSignalStats({
-  stats,
-  total,
-  surface,
-  browseBase,
-}: {
-  stats: HubStat[];
-  total: number;
-  surface?: HubSignalSurface;
-  browseBase?: { category?: string; platform?: string; q?: string };
-}) {
+export function HubSignalStats({ stats, total }: { stats: HubStat[]; total: number }) {
   if (stats.length === 0 || total < 2) return null;
   return (
     <section className="mt-12">
@@ -210,12 +103,7 @@ export function HubSignalStats({
       </p>
       <div className="mt-5 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {stats.map((s) => (
-          <StatBar
-            key={s.key}
-            stat={s}
-            surface={surface}
-            browseDestination={surface ? hubSignalStatDestination(s.key, browseBase) : null}
-          />
+          <StatBar key={s.key} stat={s} />
         ))}
       </div>
     </section>

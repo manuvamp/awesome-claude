@@ -10,74 +10,13 @@ import {
   classifyTransport,
   hostingOf,
 } from "@/lib/mcp-stats";
-import { reportExportUrl } from "@/lib/data-reports";
 import { absoluteUrl } from "@/lib/seo";
 import { ogImageUrl, OG_WIDTH, OG_HEIGHT } from "@/lib/og-image";
 import { stringifyJsonLd } from "@/lib/json-ld";
 import { PageContainer } from "@/components/page-container";
 import { PageHeader } from "@/components/page-header";
 import { NewsletterInline } from "@/components/newsletter-inline";
-import { ReportDownloads } from "@/components/report-downloads";
 import { DataSection, DataStat, DistTable, pctOf, type DistRow } from "@/components/data-report";
-import {
-  withSourceDrilldown,
-  withTagDrilldown,
-  withTrustDrilldown,
-  withTransportDrilldown,
-  withHostingDrilldown,
-  withInstallMethodDrilldown,
-} from "@/lib/data-report-drilldown-lib";
-import { trackEvent } from "@/lib/analytics";
-import {
-  insightsPageEntryDestination,
-  stateReportEntryAnalyticsData,
-  stateReportEntryAnalyticsEvent,
-} from "@/lib/insights-page-entry-cta-events";
-import {
-  stateReportCategoryBrowseAnalyticsData,
-  stateReportCategoryBrowseAnalyticsEvent,
-  stateReportCiteAnalyticsData,
-  stateReportCiteAnalyticsEvent,
-  stateReportDistRowAnalyticsData,
-  stateReportDistRowAnalyticsEvent,
-  stateReportEgressAnalyticsData,
-  stateReportEgressAnalyticsEvent,
-  stateReportEgressRouteDestination,
-  stateReportStatAnalyticsData,
-  stateReportStatAnalyticsEvent,
-  stateReportStatDestination,
-  type StateReportEgressDestination,
-} from "@/lib/state-report-page-cta-events";
-
-const REPORT_ID = "mcp-servers" as const;
-
-function trackStateReportEgress(destination: StateReportEgressDestination) {
-  trackEvent(
-    stateReportEgressAnalyticsEvent(),
-    stateReportEgressAnalyticsData(REPORT_ID, destination),
-  );
-}
-
-function trackStateReportCite() {
-  trackEvent(stateReportCiteAnalyticsEvent(), stateReportCiteAnalyticsData(REPORT_ID));
-}
-
-function trackDistRow(dimension: string, row: DistRow, rowIndex: number, rowCount: number) {
-  if (!row.rowKey) return;
-  trackEvent(
-    stateReportDistRowAnalyticsEvent(),
-    stateReportDistRowAnalyticsData(REPORT_ID, dimension, row.rowKey, rowIndex, rowCount),
-  );
-}
-
-function trackStat(statKey: string) {
-  const destination = stateReportStatDestination(REPORT_ID, statKey);
-  if (!destination) return;
-  trackEvent(
-    stateReportStatAnalyticsEvent(),
-    stateReportStatAnalyticsData(REPORT_ID, statKey, destination.destination),
-  );
-}
 
 const PATH = "/state-of-mcp-servers";
 const TITLE = "State of MCP Servers 2026";
@@ -92,56 +31,42 @@ const MCP = ENTRIES.filter((e) => e.category === "mcp");
 const TOTAL = MCP.length;
 
 const TRANSPORT = transportDistribution(MCP);
-const TRANSPORT_DIST: DistRow[] = withTransportDrilldown(
-  TRANSPORT.rows.map((r) => ({
-    label: r.label,
-    count: r.count,
-    pct: pctOf(r.count, TRANSPORT.total),
-  })),
-  "mcp",
-);
+const TRANSPORT_DIST: DistRow[] = TRANSPORT.rows.map((r) => ({
+  label: r.label,
+  count: r.count,
+  pct: pctOf(r.count, TRANSPORT.total),
+}));
 
 const HOSTING = hostingDistribution(MCP);
-const HOSTING_DIST: DistRow[] = withHostingDrilldown(
-  HOSTING.rows.map((r) => ({
-    label: r.label,
-    count: r.count,
-    pct: pctOf(r.count, HOSTING.total),
-  })),
-  "mcp",
-);
+const HOSTING_DIST: DistRow[] = HOSTING.rows.map((r) => ({
+  label: r.label,
+  count: r.count,
+  pct: pctOf(r.count, HOSTING.total),
+}));
 const REMOTE = MCP.filter((e) => hostingOf(classifyTransport(e)) === "Remote (hosted)").length;
 const LOCAL = MCP.filter((e) => hostingOf(classifyTransport(e)) === "Local (stdio)").length;
 
 const TRUST_ORDER: TrustLevel[] = ["trusted", "review", "limited", "blocked"];
-const TRUST_DIST: DistRow[] = withTrustDrilldown(
-  TRUST_ORDER.map((level) => {
-    const count = MCP.filter((e) => e.trust === level).length;
-    return { label: TRUST_LABEL[level], count, pct: pctOf(count, TOTAL) };
-  }).filter((r) => r.count > 0),
-  "mcp",
-);
+const TRUST_DIST: DistRow[] = TRUST_ORDER.map((level) => {
+  const count = MCP.filter((e) => e.trust === level).length;
+  return { label: TRUST_LABEL[level], count, pct: pctOf(count, TOTAL) };
+}).filter((r) => r.count > 0);
 
 const SOURCE_ORDER: SourceStatus[] = ["first-party", "source-backed", "external", "unverified"];
-// Match index.tsx / QUALITY_STATS / mcp-servers-stats-lib: anything not unverified (#5579).
-const SOURCE_BACKED = MCP.filter((e) => e.source !== "unverified").length;
-const SOURCE_DIST: DistRow[] = withSourceDrilldown(
-  SOURCE_ORDER.map((status) => {
-    const count = MCP.filter((e) => e.source === status).length;
-    return { label: SOURCE_LABEL[status], count, pct: pctOf(count, TOTAL) };
-  }).filter((r) => r.count > 0),
-  "mcp",
-);
+const SOURCE_BACKED = MCP.filter(
+  (e) => e.source === "source-backed" || e.source === "first-party",
+).length;
+const SOURCE_DIST: DistRow[] = SOURCE_ORDER.map((status) => {
+  const count = MCP.filter((e) => e.source === status).length;
+  return { label: SOURCE_LABEL[status], count, pct: pctOf(count, TOTAL) };
+}).filter((r) => r.count > 0);
 
 const INSTALL = installMethodDistribution(MCP);
-const INSTALL_DIST: DistRow[] = withInstallMethodDrilldown(
-  INSTALL.rows.map((r) => ({
-    label: r.label,
-    count: r.count,
-    pct: pctOf(r.count, INSTALL.total),
-  })),
-  "mcp",
-);
+const INSTALL_DIST: DistRow[] = INSTALL.rows.map((r) => ({
+  label: r.label,
+  count: r.count,
+  pct: pctOf(r.count, INSTALL.total),
+}));
 
 // Most common integration tags — what these servers actually connect Claude to.
 const GENERIC_TAGS = new Set(["mcp", "mcp-server", "mcp-servers", "claude", "ai", "integration"]);
@@ -153,12 +78,10 @@ for (const e of MCP) {
     TAG_COUNTS.set(t, (TAG_COUNTS.get(t) ?? 0) + 1);
   }
 }
-const TAG_DIST: DistRow[] = withTagDrilldown(
-  [...TAG_COUNTS.entries()]
-    .map(([label, count]) => ({ label, count, pct: pctOf(count, TOTAL) }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
-    .slice(0, 12),
-);
+const TAG_DIST: DistRow[] = [...TAG_COUNTS.entries()]
+  .map(([label, count]) => ({ label, count, pct: pctOf(count, TOTAL) }))
+  .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+  .slice(0, 12);
 
 const RECENT = [...MCP]
   .sort((a, b) => String(b.dateAdded).localeCompare(String(a.dateAdded)))
@@ -199,18 +122,6 @@ export const Route = createFileRoute("/state-of-mcp-servers")({
         "Source provenance distribution",
         "Install-method distribution",
         "Most common integration tags",
-      ],
-      distribution: [
-        {
-          "@type": "DataDownload",
-          encodingFormat: "application/json",
-          contentUrl: reportExportUrl("mcp-servers", "json"),
-        },
-        {
-          "@type": "DataDownload",
-          encodingFormat: "text/csv",
-          contentUrl: reportExportUrl("mcp-servers", "csv"),
-        },
       ],
     };
     const breadcrumbs = {
@@ -266,76 +177,39 @@ function StateOfMcpServersPage() {
       <p className="mt-2 text-xs text-ink-subtle">Data as of {asOfLabel} (UTC).</p>
 
       <div className="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border stagger-children sm:grid-cols-4">
-        {(
-          [
-            {
-              key: "total",
-              icon: Boxes,
-              label: "MCP servers",
-              value: TOTAL,
-              hint: "in the registry",
-            },
-            {
-              key: "remote",
-              icon: Cloud,
-              label: "Hosted (remote)",
-              value: REMOTE,
-              hint: `${pctOf(REMOTE, TOTAL)}% of total`,
-            },
-            {
-              key: "local",
-              icon: HardDrive,
-              label: "Local (stdio)",
-              value: LOCAL,
-              hint: `${pctOf(LOCAL, TOTAL)}% of total`,
-            },
-            {
-              key: "source-backed",
-              icon: GitBranch,
-              label: "Source-backed",
-              value: SOURCE_BACKED,
-              hint: `${pctOf(SOURCE_BACKED, TOTAL)}% of total`,
-            },
-          ] as const
-        ).map((stat) => {
-          const destination = stateReportStatDestination(REPORT_ID, stat.key);
-          return (
-            <DataStat
-              key={stat.key}
-              icon={stat.icon}
-              label={stat.label}
-              value={stat.value}
-              hint={stat.hint}
-              to={destination?.to}
-              search={destination?.search}
-              onNavigate={() => trackStat(stat.key)}
-            />
-          );
-        })}
+        <DataStat icon={Boxes} label="MCP servers" value={TOTAL} hint="in the registry" />
+        <DataStat
+          icon={Cloud}
+          label="Hosted (remote)"
+          value={REMOTE}
+          hint={`${pctOf(REMOTE, TOTAL)}% of total`}
+        />
+        <DataStat
+          icon={HardDrive}
+          label="Local (stdio)"
+          value={LOCAL}
+          hint={`${pctOf(LOCAL, TOTAL)}% of total`}
+        />
+        <DataStat
+          icon={GitBranch}
+          label="Source-backed"
+          value={SOURCE_BACKED}
+          hint={`${pctOf(SOURCE_BACKED, TOTAL)}% of total`}
+        />
       </div>
 
       <DataSection
         title="Transport distribution"
         help="How MCP servers connect to Claude. Local servers speak stdio; hosted servers expose an HTTP (streamable) or SSE endpoint. Classified from each entry's declared config and install command."
       >
-        <DistTable
-          rows={TRANSPORT_DIST}
-          onRowClick={(row, rowIndex) =>
-            trackDistRow("transport", row, rowIndex, TRANSPORT_DIST.length)
-          }
-        />
+        <DistTable rows={TRANSPORT_DIST} />
       </DataSection>
 
       <DataSection
         title="Local vs hosted"
         help="Whether a server runs as a local process you launch (stdio) or a remote endpoint you connect to (HTTP/SSE)."
       >
-        <DistTable
-          rows={HOSTING_DIST}
-          onRowClick={(row, rowIndex) =>
-            trackDistRow("hosting", row, rowIndex, HOSTING_DIST.length)
-          }
-        />
+        <DistTable rows={HOSTING_DIST} />
       </DataSection>
 
       <div className="mt-12 grid gap-6 lg:grid-cols-2">
@@ -343,27 +217,12 @@ function StateOfMcpServersPage() {
           <h2 className="h-display-2 text-ink text-balance">Trust-level distribution</h2>
           <p className="mt-2 text-sm text-ink-muted">
             Every server carries a trust signal you can verify.{" "}
-            {(() => {
-              const destination = stateReportEgressRouteDestination("quality");
-              if (!destination) return "See how we score.";
-              return (
-                <Link
-                  to={destination.to}
-                  onClick={() => trackStateReportEgress("quality")}
-                  className="text-ink underline-offset-2 hover:underline"
-                >
-                  See how we score.
-                </Link>
-              );
-            })()}
+            <Link to="/quality" className="text-ink underline-offset-2 hover:underline">
+              See how we score.
+            </Link>
           </p>
           <div className="mt-4">
-            <DistTable
-              rows={TRUST_DIST}
-              onRowClick={(row, rowIndex) =>
-                trackDistRow("trust-level", row, rowIndex, TRUST_DIST.length)
-              }
-            />
+            <DistTable rows={TRUST_DIST} />
           </div>
         </div>
         <div>
@@ -373,12 +232,7 @@ function StateOfMcpServersPage() {
             registry.
           </p>
           <div className="mt-4">
-            <DistTable
-              rows={SOURCE_DIST}
-              onRowClick={(row, rowIndex) =>
-                trackDistRow("source-provenance", row, rowIndex, SOURCE_DIST.length)
-              }
-            />
+            <DistTable rows={SOURCE_DIST} />
           </div>
         </div>
       </div>
@@ -387,27 +241,15 @@ function StateOfMcpServersPage() {
         title="Install methods"
         help={`How the ${INSTALL.total} MCP servers with an install command are delivered. Servers configured purely by editing a config file (no install command) are excluded here.`}
       >
-        <DistTable
-          rows={INSTALL_DIST}
-          onRowClick={(row, rowIndex) =>
-            trackDistRow("install-methods", row, rowIndex, INSTALL_DIST.length)
-          }
-        />
+        <DistTable rows={INSTALL_DIST} />
       </DataSection>
 
       <DataSection
         title="Most common integrations"
         help="The services and capabilities these servers connect Claude to most often, by tag. Generic tags (mcp, claude) are excluded."
       >
-        <DistTable
-          rows={TAG_DIST}
-          onRowClick={(row, rowIndex) =>
-            trackDistRow("integrations", row, rowIndex, TAG_DIST.length)
-          }
-        />
+        <DistTable rows={TAG_DIST} />
       </DataSection>
-
-      <ReportDownloads exportSlug="mcp-servers" />
 
       <section className="mt-12">
         <div className="flex items-center gap-2">
@@ -418,39 +260,18 @@ function StateOfMcpServersPage() {
           The ten most recently dated MCP servers in the registry snapshot.
         </p>
         <ol className="mt-4 overflow-hidden rounded-xl border border-border bg-surface">
-          {RECENT.map((e, rowIndex) => (
+          {RECENT.map((e) => (
             <li
               key={`${e.category}/${e.slug}`}
               className="flex items-center justify-between gap-3 border-b border-border px-5 py-3 last:border-0"
             >
-              {(() => {
-                const destination = insightsPageEntryDestination(e.category, e.slug);
-                if (!destination)
-                  return (
-                    <span className="min-w-0 truncate text-sm font-medium text-ink">{e.title}</span>
-                  );
-                return (
-                  <Link
-                    to={destination.to}
-                    params={destination.params}
-                    onClick={() =>
-                      trackEvent(
-                        stateReportEntryAnalyticsEvent(),
-                        stateReportEntryAnalyticsData(
-                          e.category,
-                          e.slug,
-                          "mcp-servers",
-                          rowIndex,
-                          RECENT.length,
-                        ),
-                      )
-                    }
-                    className="min-w-0 truncate text-sm font-medium text-ink hover:underline"
-                  >
-                    {e.title}
-                  </Link>
-                );
-              })()}
+              <Link
+                to="/entry/$category/$slug"
+                params={{ category: e.category, slug: e.slug }}
+                className="min-w-0 truncate text-sm font-medium text-ink hover:underline"
+              >
+                {e.title}
+              </Link>
               <span className="shrink-0 font-mono text-xs text-ink-subtle">
                 {String(e.dateAdded).slice(0, 10)}
               </span>
@@ -470,61 +291,28 @@ function StateOfMcpServersPage() {
         </p>
         <p className="mt-3 max-w-2xl text-sm text-ink-muted">
           Citing this report? Link to{" "}
-          <a
-            href={absoluteUrl(PATH)}
-            onClick={() => trackStateReportCite()}
-            className="text-ink underline-offset-2 hover:underline"
-          >
+          <a href={absoluteUrl(PATH)} className="text-ink underline-offset-2 hover:underline">
             heyclau.de/state-of-mcp-servers
           </a>{" "}
           with the data-as-of date. See also the{" "}
-          {(() => {
-            const destination = stateReportEgressRouteDestination("mcp-security-report");
-            if (!destination) return "MCP Security & Privacy Report";
-            return (
-              <Link
-                to={destination.to}
-                onClick={() => trackStateReportEgress("mcp-security-report")}
-                className="text-ink underline-offset-2 hover:underline"
-              >
-                MCP Security &amp; Privacy Report
-              </Link>
-            );
-          })()}{" "}
+          <Link to="/mcp-security-report" className="text-ink underline-offset-2 hover:underline">
+            MCP Security &amp; Privacy Report
+          </Link>{" "}
           and the broader{" "}
-          {(() => {
-            const destination = stateReportEgressRouteDestination("claude-tooling");
-            if (!destination) return "State of Claude Tooling";
-            return (
-              <Link
-                to={destination.to}
-                onClick={() => trackStateReportEgress("claude-tooling")}
-                className="text-ink underline-offset-2 hover:underline"
-              >
-                State of Claude Tooling
-              </Link>
-            );
-          })()}
+          <Link
+            to="/state-of-claude-tooling"
+            className="text-ink underline-offset-2 hover:underline"
+          >
+            State of Claude Tooling
+          </Link>
           . Browse all{" "}
-          {(() => {
-            const destination = stateReportEgressRouteDestination("category", "mcp");
-            if (!destination || !("params" in destination)) return "MCP servers";
-            return (
-              <Link
-                to={destination.to}
-                params={destination.params}
-                onClick={() =>
-                  trackEvent(
-                    stateReportCategoryBrowseAnalyticsEvent(),
-                    stateReportCategoryBrowseAnalyticsData(REPORT_ID, "mcp", TOTAL, 0, 1),
-                  )
-                }
-                className="text-ink underline-offset-2 hover:underline"
-              >
-                MCP servers
-              </Link>
-            );
-          })()}
+          <Link
+            to="/$category"
+            params={{ category: "mcp" }}
+            className="text-ink underline-offset-2 hover:underline"
+          >
+            MCP servers
+          </Link>
           .
         </p>
       </section>

@@ -51,45 +51,6 @@ describe("/api/reports/{report}", () => {
     expect(body.total).toBeGreaterThan(50);
   });
 
-  it("serves the state of Claude tooling report", async () => {
-    const res = await call("claude-tooling.json");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { report: string; total: number };
-    expect(body.report).toBe("claude-tooling");
-    expect(body.total).toBeGreaterThan(500);
-  });
-
-  it("serves the state of MCP servers report as CSV", async () => {
-    const res = await call("mcp-servers.csv");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/csv");
-    const text = await res.text();
-    expect(text.split("\r\n")[0]).toBe("dimension,label,count,percent");
-    expect(text).toContain("transport");
-  });
-
-  it("serves the MCP security report as JSON and CSV", async () => {
-    const jsonRes = await call("mcp-security.json");
-    expect(jsonRes.status).toBe(200);
-    const body = (await jsonRes.json()) as {
-      report: string;
-      total: number;
-      dimensions: Array<{ key: string }>;
-    };
-    expect(body.report).toBe("mcp-security");
-    expect(body.total).toBeGreaterThan(100);
-    expect(body.dimensions.map((dimension) => dimension.key)).toEqual(
-      expect.arrayContaining(["auth", "hosting", "supply-chain"]),
-    );
-
-    const csvRes = await call("mcp-security.csv");
-    expect(csvRes.status).toBe(200);
-    expect(csvRes.headers.get("content-type")).toContain("text/csv");
-    const text = await csvRes.text();
-    expect(text.split("\r\n")[0]).toBe("dimension,label,count,percent");
-    expect(text).toContain("auth");
-  });
-
   it("sets caching and a download filename", async () => {
     const res = await call("agent-skills.csv");
     expect(res.headers.get("cache-control")).toContain("max-age");

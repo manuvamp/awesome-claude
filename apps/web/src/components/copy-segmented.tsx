@@ -2,10 +2,13 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Check, Copy } from "lucide-react";
 import { useCopyPref, type CopyVariant } from "@/lib/dossier-prefs";
-import { variantsForEntry, type VariantOption } from "@/lib/copy-segmented-lib";
 import { cn } from "@/lib/utils";
 
-export { variantsForEntry, type VariantOption };
+export interface VariantOption {
+  id: CopyVariant;
+  label: string;
+  value?: string;
+}
 
 interface Props {
   variants: VariantOption[];
@@ -18,10 +21,6 @@ interface Props {
   hideCopy?: boolean;
   /** Optional id for aria-labelledby on the radiogroup. */
   labelId?: string;
-  /** Optional hook after a successful clipboard write. */
-  onCopied?: (variant: CopyVariant) => void;
-  /** Optional hook when the active snippet variant changes. */
-  onVariantSelect?: (variant: CopyVariant) => void;
 }
 
 /**
@@ -36,8 +35,6 @@ export function CopySegmented({
   className,
   hideCopy = false,
   labelId,
-  onCopied,
-  onVariantSelect,
 }: Props) {
   const [pref, setPref] = useCopyPref();
   const available = variants.filter((v) => !!v.value);
@@ -58,27 +55,17 @@ export function CopySegmented({
       toast.success(msg);
       if (liveRef.current) liveRef.current.textContent = msg;
       setJustCopied(true);
-      onCopied?.(active);
       window.setTimeout(() => setJustCopied(false), 1200);
     } catch {
       toast.error("Copy failed");
     }
-  }, [payload, active, entryTitle, onCopied]);
-
-  const selectVariant = React.useCallback(
-    (variant: CopyVariant) => {
-      if (variant === active) return;
-      setPref(variant);
-      onVariantSelect?.(variant);
-    },
-    [active, onVariantSelect, setPref],
-  );
+  }, [payload, active, entryTitle]);
 
   const moveBy = (delta: number) => {
     const idx = available.findIndex((v) => v.id === active);
     if (idx === -1) return;
     const next = available[(idx + delta + available.length) % available.length];
-    if (next) selectVariant(next.id);
+    if (next) setPref(next.id);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -90,11 +77,11 @@ export function CopySegmented({
       moveBy(-1);
     } else if (e.key === "Home") {
       e.preventDefault();
-      if (available[0]) selectVariant(available[0].id);
+      if (available[0]) setPref(available[0].id);
     } else if (e.key === "End") {
       e.preventDefault();
       const last = available[available.length - 1];
-      if (last) selectVariant(last.id);
+      if (last) setPref(last.id);
     } else if (e.key.toLowerCase() === "c" && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       void copy();
@@ -126,7 +113,7 @@ export function CopySegmented({
               aria-disabled={disabled || undefined}
               tabIndex={isActive ? 0 : -1}
               disabled={disabled}
-              onClick={() => !disabled && selectVariant(v.id)}
+              onClick={() => !disabled && setPref(v.id)}
               title={
                 disabled
                   ? `No ${v.label.toLowerCase()} payload`
@@ -169,4 +156,28 @@ export function CopySegmented({
       <span ref={liveRef} aria-live="polite" className="sr-only" />
     </div>
   );
+}
+
+/**
+ * Resolve the variants array for an entry, honoring an optional harness
+ * variant override and falling back to the entry's top-level fields.
+ */
+export function variantsForEntry(
+  entry: {
+    installCommand?: string;
+    configSnippet?: string;
+    fullCopy?: string;
+    harnessVariants?: Record<
+      string,
+      { installCommand?: string; configSnippet?: string; fullCopy?: string } | undefined
+    >;
+  },
+  harnessId?: string | null,
+): VariantOption[] {
+  const hv = harnessId ? entry.harnessVariants?.[harnessId] : undefined;
+  return [
+    { id: "install", label: "Install", value: hv?.installCommand ?? entry.installCommand },
+    { id: "config", label: "Config", value: hv?.configSnippet ?? entry.configSnippet },
+    { id: "full", label: "Full", value: hv?.fullCopy ?? entry.fullCopy },
+  ];
 }

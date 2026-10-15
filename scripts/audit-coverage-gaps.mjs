@@ -13,10 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  findCoverageGaps,
-  parseCoverageGapsArgs,
-} from "./lib/coverage-gaps.mjs";
+import { findCoverageGaps } from "./lib/coverage-gaps.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -33,8 +30,20 @@ function loadEntries() {
   return atlas.entries ?? [];
 }
 
+function parseArgs(argv) {
+  const args = { json: false, minDemand: 12, perCategory: 12 };
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === "--json") args.json = true;
+    else if (argv[i] === "--min-demand")
+      args.minDemand = Number(argv[++i]) || 12;
+    else if (argv[i] === "--per-category")
+      args.perCategory = Number(argv[++i]) || 12;
+  }
+  return args;
+}
+
 function main(argv = process.argv.slice(2)) {
-  const args = parseCoverageGapsArgs(argv);
+  const args = parseArgs(argv);
   const groups = findCoverageGaps(loadEntries(), {
     minDemand: args.minDemand,
     maxInCategory: 1,

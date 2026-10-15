@@ -169,17 +169,6 @@ describe("cardHtml", () => {
     expect(html).not.toContain("text-transform:uppercase");
     expect(html).not.toContain("line-height:1.5");
   });
-
-  it("falls back to the site URL and an empty title when both are absent", () => {
-    const html = cardHtml(
-      item({ url: undefined, title: undefined as unknown as string }),
-      siteUrl,
-    );
-    expect(html).toContain(`href="${siteUrl}"`);
-    expect(html).toContain(
-      'style="display:inline-block;margin:3px 0 0;font-size:15px;font-weight:600;color:#171614;text-decoration:none;line-height:1.3;"></a>',
-    );
-  });
 });
 
 describe("overflowRowHtml", () => {
@@ -194,17 +183,6 @@ describe("overflowRowHtml", () => {
       siteUrl,
     );
     expect(bare).not.toContain("text-transform:uppercase");
-  });
-
-  it("falls back to the site URL and an empty title when both are absent", () => {
-    const html = overflowRowHtml(
-      item({ url: undefined, title: undefined as unknown as string }),
-      siteUrl,
-    );
-    expect(html).toContain(`href="${siteUrl}"`);
-    expect(html).toContain(
-      'style="font-size:14px;font-weight:600;color:#171614;text-decoration:none;"></a>',
-    );
   });
 });
 
@@ -265,24 +243,6 @@ describe("sectionText", () => {
     expect(text).toContain(
       "Overflow 4 [MCP server] — https://heyclau.de/entry/mcp/o4",
     );
-  });
-
-  it("omits the description line and falls back to the site URL for a featured item with neither", () => {
-    const text = sectionText(
-      SECTIONS[0],
-      [item({ description: undefined, url: undefined })],
-      siteUrl,
-    );
-    expect(text).toContain(`• Demo Entry [MCP server]\n    ${siteUrl}`);
-  });
-
-  it("falls back to the site URL for an overflow item with no url", () => {
-    const rows = Array.from({ length: 5 }, (_, index) =>
-      item({ title: `Overflow ${index}`, url: `/entry/mcp/o${index}` }),
-    );
-    rows[4] = item({ title: "Overflow 4", url: undefined });
-    const text = sectionText(SECTIONS[0], rows, siteUrl);
-    expect(text).toContain(`Overflow 4 [MCP server] — ${siteUrl}`);
   });
 });
 
@@ -389,14 +349,5 @@ describe("buildBriefEmail", () => {
       dateLabel: "2026-06-19",
     });
     expect(result.text).toContain("https://heyclau.de/entry/mcp/relative");
-  });
-
-  it("falls back to the empty-state when the brief omits sections entirely", () => {
-    const result = buildBriefEmail({
-      brief: {},
-      siteUrl,
-      dateLabel: "2026-06-19",
-    });
-    expect(result.html).toContain("No notable activity this week.");
   });
 });

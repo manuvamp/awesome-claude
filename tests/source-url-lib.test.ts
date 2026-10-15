@@ -3,20 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalizeSourceUrl,
   hasAffiliateParam,
-  hasAffiliatePath,
-  hasEmbeddedUrlUserinfo,
   isAffiliateParam,
-  isLikelyAffiliateUrl,
-  isPublicGitHubHostUrl,
-  isPublicGitHubProfileUrl,
-  isPublicHttpUrl,
-  isPublicHttpsUrl,
   isTrackingParam,
-  publicHttpUrlHref,
-  publicUrlHostname,
   stripTrackingParams,
 } from "../packages/registry/src/source-url-lib.js";
-import { RESERVED_OWNERS } from "../packages/registry/src/source-repo-lib.js";
 
 const AFFILIATE_PARAMS = [
   "aff",
@@ -26,11 +16,9 @@ const AFFILIATE_PARAMS = [
   "coupon",
   "irclickid",
   "partner",
-  "partner_id",
   "ref",
   "referral",
   "referral_code",
-  "tag",
   "via",
 ];
 
@@ -51,147 +39,6 @@ const ANALYTICS_PARAMS = [
   "twclid",
   "yclid",
 ];
-
-describe("isPublicHttpsUrl", () => {
-  it("accepts clean https URLs and optional empty values", () => {
-    expect(isPublicHttpsUrl("")).toBe(true);
-    expect(isPublicHttpsUrl("https://github.com/example/repo")).toBe(true);
-  });
-
-  it("rejects http URLs and embedded userinfo credentials", () => {
-    expect(isPublicHttpsUrl("http://example.com/repo")).toBe(false);
-    expect(
-      isPublicHttpsUrl("https://github.com@evil.example.com/owner/repo"),
-    ).toBe(false);
-    expect(isPublicHttpsUrl("https://token@github.com/owner/repo")).toBe(false);
-    expect(isPublicHttpsUrl("https://user:pass@github.com/owner/repo")).toBe(
-      false,
-    );
-    expect(
-      isPublicHttpsUrl("https://user%40name:pass@github.com/owner/repo"),
-    ).toBe(false);
-  });
-});
-
-describe("public URL userinfo helpers", () => {
-  it("detects embedded userinfo across common credential shapes", () => {
-    expect(hasEmbeddedUrlUserinfo("https://token@github.com/owner/repo")).toBe(
-      true,
-    );
-    expect(hasEmbeddedUrlUserinfo("https://user:pass@example.com/docs")).toBe(
-      true,
-    );
-    expect(hasEmbeddedUrlUserinfo("https://github.com/owner/repo")).toBe(false);
-    expect(hasEmbeddedUrlUserinfo("not a url")).toBe(false);
-  });
-
-  it("validates public http and https URLs without userinfo", () => {
-    expect(isPublicHttpUrl("http://example.com/docs")).toBe(true);
-    expect(isPublicHttpUrl("https://example.com/docs")).toBe(true);
-    expect(isPublicHttpUrl("https://token@example.com/docs")).toBe(false);
-    expect(isPublicHttpUrl("ftp://example.com/docs")).toBe(false);
-    expect(isPublicHttpUrl("")).toBe(true);
-  });
-
-  it("extracts hostnames and hrefs only from credential-free URLs", () => {
-    expect(publicUrlHostname("https://www.Example.com/path")).toBe(
-      "example.com",
-    );
-    expect(publicUrlHostname("https://token@example.com/path")).toBe("");
-    expect(publicHttpUrlHref("https://example.com/path")).toBe(
-      "https://example.com/path",
-    );
-    expect(publicHttpUrlHref("https://token@example.com/path")).toBe("");
-    expect(publicHttpUrlHref("ftp://example.com/path")).toBe("");
-  });
-
-  it("validates GitHub profile and host URLs without userinfo", () => {
-    expect(isPublicGitHubProfileUrl("https://github.com/octocat")).toBe(true);
-    expect(isPublicGitHubProfileUrl("https://token@github.com/octocat")).toBe(
-      false,
-    );
-    expect(isPublicGitHubProfileUrl("https://github.com/octocat/repo")).toBe(
-      false,
-    );
-    expect(isPublicGitHubHostUrl("https://github.com/octocat/repo")).toBe(true);
-    expect(isPublicGitHubHostUrl("https://token@github.com/octocat/repo")).toBe(
-      false,
-    );
-    expect(isPublicGitHubHostUrl("https://gist.github.com/octocat")).toBe(true);
-  });
-
-  it("treats http and www GitHub hosts as public", () => {
-    expect(isPublicGitHubHostUrl("http://github.com/octocat")).toBe(true);
-    expect(isPublicGitHubHostUrl("https://www.github.com/octocat")).toBe(true);
-    expect(isPublicGitHubHostUrl("https://raw.githubusercontent.com/x")).toBe(
-      false,
-    );
-  });
-
-  it("accepts www.github.com profile URLs like bare github.com", () => {
-    expect(isPublicGitHubProfileUrl("https://www.github.com/octocat")).toBe(
-      true,
-    );
-    expect(isPublicGitHubProfileUrl("https://WWW.GitHub.com/octocat")).toBe(
-      true,
-    );
-    expect(
-      isPublicGitHubProfileUrl("https://www.github.com/octocat/repo"),
-    ).toBe(false);
-  });
-
-  it("rejects non-http(s) URLs even on a GitHub host", () => {
-    // A GitHub hostname over ftp/ws is not a public GitHub web URL; the protocol
-    // guard matches the sibling public-URL validators.
-    expect(isPublicGitHubHostUrl("ftp://github.com/octocat")).toBe(false);
-    expect(isPublicGitHubHostUrl("ws://raw.github.com/socket")).toBe(false);
-    expect(isPublicGitHubHostUrl("ssh://git@github.com/owner/repo")).toBe(
-      false,
-    );
-  });
-
-  it("rejects reserved GitHub product surfaces as profiles", () => {
-    // A single path segment that is a reserved GitHub page is not a user
-    // profile, mirroring how the repo-URL parser rejects reserved owners.
-    for (const surface of [
-      "features",
-      "sponsors",
-      "about",
-      "pricing",
-      "settings",
-      "marketplace",
-      "explore",
-      "security",
-    ]) {
-      expect(isPublicGitHubProfileUrl(`https://github.com/${surface}`)).toBe(
-        false,
-      );
-    }
-  });
-
-  it("matches reserved surfaces case-insensitively", () => {
-    expect(isPublicGitHubProfileUrl("https://github.com/Sponsors")).toBe(false);
-    expect(isPublicGitHubProfileUrl("https://github.com/FEATURES")).toBe(false);
-  });
-
-  it("still accepts an ordinary account whose name is not reserved", () => {
-    expect(isPublicGitHubProfileUrl("https://github.com/octocat")).toBe(true);
-    // A name that merely contains a reserved word is a real account.
-    expect(isPublicGitHubProfileUrl("https://github.com/features-bot")).toBe(
-      true,
-    );
-  });
-
-  it("rejects every reserved owner the repo parser knows about", () => {
-    // Shared source of truth: the profile checker must not drift from the
-    // repo-URL parser's reserved list.
-    for (const owner of RESERVED_OWNERS) {
-      expect(isPublicGitHubProfileUrl(`https://github.com/${owner}`)).toBe(
-        false,
-      );
-    }
-  });
-});
 
 describe("isAffiliateParam", () => {
   it.each(AFFILIATE_PARAMS)("treats %s as an affiliate param", (name) => {
@@ -334,19 +181,6 @@ describe("canonicalizeSourceUrl", () => {
         "https://www.Example.com/docs/?utm_source=newsletter&b=2&a=1#install",
       ),
     ).toBe("https://example.com/docs?a=1&b=2");
-  });
-
-  it("strips embedded userinfo so duplicate keys ignore credential noise", () => {
-    const canonical = "https://github.com/example/demo";
-    expect(canonicalizeSourceUrl("https://token@github.com/example/demo")).toBe(
-      canonical,
-    );
-    expect(
-      canonicalizeSourceUrl("https://user:pass@github.com/example/demo"),
-    ).toBe(canonical);
-    expect(
-      canonicalizeSourceUrl("https://github.com@evil.example.com/example/demo"),
-    ).not.toBe(canonical);
   });
 
   it("sorts query params lexicographically", () => {
@@ -637,26 +471,6 @@ describe("hasAffiliateParam partner and coupon campaigns", () => {
   );
 });
 
-describe("shared affiliate param union (#5558)", () => {
-  it.each(["tag", "partner_id"])(
-    "treats previously risk-only %s as affiliate for hasAffiliateParam and canonicalize",
-    (name) => {
-      const url = `https://example.com/p?${name}=mytag-20&keep=1`;
-      expect(isAffiliateParam(name)).toBe(true);
-      expect(hasAffiliateParam(url)).toBe(true);
-      expect(canonicalizeSourceUrl(url)).toBe("https://example.com/p?keep=1");
-      expect(stripTrackingParams(url)).toBe("https://example.com/p?keep=1");
-    },
-  );
-
-  it("still treats campaign and coupon as affiliate after the union", () => {
-    expect(hasAffiliateParam("https://example.com/p?campaign=spring")).toBe(
-      true,
-    );
-    expect(hasAffiliateParam("https://example.com/p?coupon=SAVE10")).toBe(true);
-  });
-});
-
 describe("canonicalizeSourceUrl registry comparison scenarios", () => {
   it("normalizes common GitHub source URL variants", () => {
     const canonical = "https://github.com/org/repo/tree/main/docs";
@@ -765,64 +579,5 @@ describe("canonicalizeSourceUrl path normalization table", () => {
     ["https://example.com/a/b/c/", "https://example.com/a/b/c"],
   ])("normalizes %s to %s", (input, expected) => {
     expect(canonicalizeSourceUrl(input)).toBe(expected);
-  });
-});
-
-describe("URL helpers handle nullish, empty, and unparseable input", () => {
-  it("treats nullish/empty values as valid optional URLs", () => {
-    expect(isPublicHttpsUrl(null)).toBe(true);
-    expect(isPublicHttpsUrl(undefined)).toBe(true);
-    expect(isPublicHttpUrl(null)).toBe(true);
-  });
-
-  it("rejects a non-empty value that cannot be parsed as a URL", () => {
-    expect(isPublicHttpsUrl("not a url")).toBe(false);
-    expect(isPublicHttpUrl("http://")).toBe(false);
-  });
-
-  it("returns '' from publicHttpUrlHref for nullish or empty input", () => {
-    expect(publicHttpUrlHref(null)).toBe("");
-    expect(publicHttpUrlHref("")).toBe("");
-    expect(publicHttpUrlHref("   ")).toBe("");
-  });
-});
-
-describe("hasAffiliatePath (#5637)", () => {
-  it.each([
-    ["https://example.com/partners/xyz", true],
-    ["https://example.com/referral/abc", true],
-    ["https://example.com/affiliate/link", true],
-    ["https://example.com/ref", true],
-    ["https://example.com/refer", true],
-    ["https://example.com/ref/", true],
-    ["https://example.com/ref/spec", false],
-    ["https://example.com/reference/guide", false],
-    ["https://go.dev/ref/mod", false],
-    ["https://example.com/docs", false],
-    ["https://example.com", false],
-    ["", false],
-  ])("hasAffiliatePath(%j) -> %j", (input, expected) => {
-    expect(hasAffiliatePath(input)).toBe(expected);
-  });
-});
-
-describe("isLikelyAffiliateUrl (#5637)", () => {
-  it.each([
-    ["https://example.com?ref=xyz", true],
-    ["https://example.com/partners/xyz", true],
-    ["https://example.com/referral/abc", true],
-    ["https://example.com/affiliate", true],
-    ["https://example.com/ref", true],
-    ["https://example.com/ref/spec", false],
-    ["https://example.com/docs", false],
-    ["https://example.com", false],
-    ["", false],
-  ])("isLikelyAffiliateUrl(%j) -> %j", (input, expected) => {
-    expect(isLikelyAffiliateUrl(input)).toBe(expected);
-  });
-
-  it("submission-lib and submission-risk now agree on /partners/ path URLs (#5637)", () => {
-    const partnerUrl = "https://example.com/partners/promo";
-    expect(isLikelyAffiliateUrl(partnerUrl)).toBe(true);
   });
 });

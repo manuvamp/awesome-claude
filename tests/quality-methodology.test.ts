@@ -49,37 +49,20 @@ describe("quality methodology page", () => {
     );
   });
 
-  it("associates each method disclosure toggle with its revealed detail", () => {
-    const methodSource = qualitySource.slice(
-      qualitySource.indexOf("function Method({"),
-      qualitySource.indexOf("function Stat({"),
-    );
-
-    expect(methodSource).toContain("const detailId = useId();");
-    expect(methodSource).toContain("aria-controls={detailId}");
-    expect(methodSource).toContain("<p id={detailId}");
-  });
-
   it("links entry trust and citation surfaces to the methodology anchors", () => {
     const trustDrilldownSource = readRepoFile(
       "apps/web/src/components/trust-drilldown.tsx",
     );
-    const trustDrilldownDestinations = readRepoFile(
-      "apps/web/src/lib/trust-drilldown-cta-events-lib.ts",
-    );
-    const sourceCitationsDestinations = readRepoFile(
-      "apps/web/src/lib/source-citations-cta-events-lib.ts",
+    const sourceCitationsSource = readRepoFile(
+      "apps/web/src/components/source-citations.tsx",
     );
     const registryFeedSource = readRepoFile(
       "apps/web/src/routes/api/registry/feed.ts",
     );
 
-    expect(trustDrilldownDestinations).toContain('hash: "methodology"');
-    expect(trustDrilldownDestinations).not.toContain('hash: "preflight"');
-    expect(trustDrilldownSource).toContain(
-      "trustDrilldownMethodologyDestination",
-    );
-    expect(sourceCitationsDestinations).toContain('hash: "source-provenance"');
+    expect(trustDrilldownSource).toContain('hash="methodology"');
+    expect(trustDrilldownSource).not.toContain('hash="preflight"');
+    expect(sourceCitationsSource).toContain('hash="source-provenance"');
     expect(registryFeedSource).toContain(
       'const QUALITY_METHODOLOGY_PATH = "/quality#methodology";',
     );

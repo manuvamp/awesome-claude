@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -18,35 +18,12 @@ import {
   type SpecField,
 } from "@/lib/submission-spec";
 import { logClientError } from "@/lib/client-logs";
-import { safeGitHubAuthUrl } from "@/lib/github-auth-url-lib";
 import { siteConfig } from "@/lib/site";
-import { safeGateStatusUrl, sanitizeNextActionUrl } from "@/lib/submit-url-safety-lib";
 import { CopyButton } from "@/components/copy-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { absoluteUrl } from "@/lib/seo";
 import { trackEvent } from "@/lib/analytics";
-import {
-  submitCategorySelectAnalyticsData,
-  submitCategorySelectAnalyticsEvent,
-  submitCompletionEgressAnalyticsData,
-  submitCompletionEgressAnalyticsEvent,
-  submitDraftCopyAnalyticsData,
-  submitDraftCopyAnalyticsEvent,
-  submitEgressAnalyticsData,
-  submitEgressAnalyticsEvent,
-  submitEgressDestination,
-  submitPreflightNextActionAnalyticsData,
-  submitPreflightNextActionAnalyticsEvent,
-  submitPreflightRetryAnalyticsData,
-  submitPreflightRetryAnalyticsEvent,
-  submitStartAnalyticsData,
-  submitStartAnalyticsEvent,
-  submitStepAnalyticsData,
-  submitStepAnalyticsEvent,
-  submitSuccessAnalyticsData,
-  submitSuccessAnalyticsEvent,
-} from "@/lib/submit-cta-events";
 
 export const Route = createFileRoute("/submit")({
   head: () => ({
@@ -69,6 +46,7 @@ export const Route = createFileRoute("/submit")({
 });
 
 const STEPS = ["Category", "Details", "Safety & privacy", "Review"] as const;
+const GITHUB_AUTH_HOSTS = new Set(["github.com"]);
 
 type PreflightResponse = {
   ok: true;
@@ -97,6 +75,71 @@ type PreflightResponse = {
     url?: string;
   };
 };
+
+function safeGitHubAuthUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || !GITHUB_AUTH_HOSTS.has(url.hostname)) {
+      return "";
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function originFor(value: string) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "";
+  }
+}
+
+function safeUrlForOrigins(
+  value: string | undefined,
+  allowedOrigins: Set<string>,
+  baseUrl = siteConfig.url,
+) {
+  if (!value) return "";
+  try {
+    const url = new URL(value, baseUrl);
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      !allowedOrigins.has(url.origin)
+    ) {
+      return "";
+    }
+    if (value.startsWith("/") && url.origin === originFor(baseUrl)) {
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function safeGateStatusUrl(value: string | undefined) {
+  const gateOrigin = originFor(siteConfig.submissionGateUrl);
+  return safeUrlForOrigins(value, new Set(gateOrigin ? [gateOrigin] : []));
+}
+
+function sanitizePreflightResponse(payload: PreflightResponse) {
+  const siteOrigin = originFor(siteConfig.url);
+  if (!payload.nextAction?.url || !siteOrigin) return payload;
+  const safeNextUrl = safeUrlForOrigins(
+    payload.nextAction.url,
+    new Set([siteOrigin]),
+    siteConfig.url,
+  );
+  return {
+    ...payload,
+    nextAction: {
+      ...payload.nextAction,
+      ...(safeNextUrl ? { url: safeNextUrl } : { url: undefined }),
+    },
+  };
+}
 
 type SubmitResult = {
   statusUrl?: string;
@@ -155,7 +198,7 @@ function SubmitPage() {
       if (!response.ok || !payload?.ok) {
         throw new Error("Server preflight failed. Retry before continuing to GitHub.");
       }
-      const safePayload = sanitizeNextActionUrl(payload);
+      const safePayload = sanitizePreflightResponse(payload);
       setPreflightResult(safePayload);
       return safePayload;
     } catch (error) {
@@ -174,13 +217,10 @@ function SubmitPage() {
     if (!category || submitBusy) return;
     setSubmitBusy(true);
     setSubmitError("");
-    trackEvent(
-      submitStartAnalyticsEvent(),
-      submitStartAnalyticsData(category, Boolean(siteConfig.submissionGateUrl)),
-    );
+    trackEvent("submit-start", { category });
     try {
       if (!siteConfig.submissionGateUrl) {
-        trackEvent(submitSuccessAnalyticsEvent(), submitSuccessAnalyticsData(category, "manual"));
+        trackEvent("submit-success", { category, path: "manual" });
         setDone({
           manualPr: {
             targetPath: prTarget,
@@ -211,7 +251,7 @@ function SubmitPage() {
       if (!response.ok || !payload?.ok) {
         throw new Error(payload?.error || "The private submission gate rejected the draft.");
       }
-      trackEvent(submitSuccessAnalyticsEvent(), submitSuccessAnalyticsData(category, "gate"));
+      trackEvent("submit-success", { category, path: "gate" });
       const authUrl = payload.authUrl ? safeGitHubAuthUrl(payload.authUrl) : "";
       if (payload.authUrl && !authUrl) {
         throw new Error("The submission gate returned an invalid GitHub auth URL.");
@@ -261,12 +301,6 @@ function SubmitPage() {
             href={done.statusUrl}
             target="_blank"
             rel="noreferrer"
-            onClick={() =>
-              trackEvent(
-                submitCompletionEgressAnalyticsEvent(),
-                submitCompletionEgressAnalyticsData(category || "", "status"),
-              )
-            }
             className="mt-6 inline-flex h-10 items-center justify-center rounded-md bg-ink px-4 text-sm font-medium text-background hover:bg-ink/90"
           >
             Open submission status
@@ -276,12 +310,7 @@ function SubmitPage() {
           <div className="mt-6 text-left">
             <div className="mb-2 flex items-center justify-between">
               <div className="eyebrow">{done.manualPr.targetPath}</div>
-              <CopyButton
-                value={done.manualPr.body}
-                label="Copy"
-                event={submitDraftCopyAnalyticsEvent()}
-                eventData={submitDraftCopyAnalyticsData(category || "", "manual")}
-              />
+              <CopyButton value={done.manualPr.body} label="Copy" />
             </div>
             <pre className="max-h-[420px] overflow-auto rounded-md border border-border bg-background p-3 text-[11px] text-ink">
               <code>{done.manualPr.body}</code>
@@ -310,37 +339,13 @@ function SubmitPage() {
       <p className="mt-2 text-sm text-ink-muted">
         Free, source-backed, useful. The site opens a single-entry GitHub PR for private-gate
         review. Commercial tools go through{" "}
-        {(() => {
-          const destination = submitEgressDestination("advertise");
-          if (!destination) return "advertise";
-          return (
-            <Link
-              to={destination.to}
-              className="text-ink underline"
-              onClick={() =>
-                trackEvent(submitEgressAnalyticsEvent(), submitEgressAnalyticsData("advertise"))
-              }
-            >
-              advertise
-            </Link>
-          );
-        })()}
+        <a href="/advertise" className="text-ink underline">
+          advertise
+        </a>
         . Jobs go through{" "}
-        {(() => {
-          const destination = submitEgressDestination("jobs-post");
-          if (!destination) return "post a job";
-          return (
-            <Link
-              to={destination.to}
-              className="text-ink underline"
-              onClick={() =>
-                trackEvent(submitEgressAnalyticsEvent(), submitEgressAnalyticsData("jobs-post"))
-              }
-            >
-              post a job
-            </Link>
-          );
-        })()}
+        <a href="/jobs/post" className="text-ink underline">
+          post a job
+        </a>
         .
       </p>
 
@@ -364,12 +369,7 @@ function SubmitPage() {
           e.preventDefault();
           if (!canContinue) return;
           if (step < STEPS.length - 1) {
-            const toStep = step + 1;
-            trackEvent(
-              submitStepAnalyticsEvent(),
-              submitStepAnalyticsData("continue", step, toStep, category || "", STEPS.length),
-            );
-            setStep(toStep);
+            setStep((s) => s + 1);
             return;
           }
           if (!preflightResult) {
@@ -392,10 +392,6 @@ function SubmitPage() {
                     key={c.id}
                     type="button"
                     onClick={() => {
-                      trackEvent(
-                        submitCategorySelectAnalyticsEvent(),
-                        submitCategorySelectAnalyticsData(c.id, disabled, CATEGORIES.length),
-                      );
                       setCategory(c.id);
                       setData({});
                       setPreflightResult(null);
@@ -427,24 +423,9 @@ function SubmitPage() {
             {unsupportedWebCategory && (
               <div className="mt-4 rounded-md border border-border bg-background p-3 text-xs text-ink-muted">
                 This category is not enabled for website-created PRs yet. Use{" "}
-                {(() => {
-                  const destination = submitEgressDestination("advertise");
-                  if (!destination) return "commercial intake";
-                  return (
-                    <Link
-                      to={destination.to}
-                      className="text-ink underline"
-                      onClick={() =>
-                        trackEvent(
-                          submitEgressAnalyticsEvent(),
-                          submitEgressAnalyticsData("advertise"),
-                        )
-                      }
-                    >
-                      commercial intake
-                    </Link>
-                  );
-                })()}{" "}
+                <a href="/advertise" className="text-ink underline">
+                  commercial intake
+                </a>{" "}
                 for tools or contact a maintainer for special routing.
               </div>
             )}
@@ -512,25 +493,13 @@ function SubmitPage() {
               result={preflightResult}
               error={preflightError}
               busy={preflightBusy}
-              category={category || ""}
-              onRun={() => {
-                trackEvent(
-                  submitPreflightRetryAnalyticsEvent(),
-                  submitPreflightRetryAnalyticsData(category || "", step),
-                );
-                void runServerPreflight();
-              }}
+              onRun={() => void runServerPreflight()}
             />
 
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <div className="eyebrow">PR draft</div>
-                <CopyButton
-                  value={prPacket}
-                  label="Copy"
-                  event={submitDraftCopyAnalyticsEvent()}
-                  eventData={submitDraftCopyAnalyticsData(category || "", "wizard")}
-                />
+                <CopyButton value={prPacket} label="Copy" />
               </div>
               <div className="mb-2 grid gap-2 rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-ink-muted">
                 <span>{prTitle}</span>
@@ -552,15 +521,7 @@ function SubmitPage() {
         <div className="mt-6 flex items-center justify-between gap-2">
           <button
             type="button"
-            onClick={() => {
-              if (step === 0) return;
-              const toStep = step - 1;
-              trackEvent(
-                submitStepAnalyticsEvent(),
-                submitStepAnalyticsData("back", step, toStep, category || "", STEPS.length),
-              );
-              setStep(toStep);
-            }}
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
             disabled={step === 0}
             className="text-sm text-ink-muted hover:text-ink disabled:opacity-40"
           >
@@ -595,13 +556,11 @@ function ServerPreflightBlock({
   result,
   error,
   busy,
-  category,
   onRun,
 }: {
   result: PreflightResponse | null;
   error: string;
   busy: boolean;
-  category: string;
   onRun: () => void;
 }) {
   if (busy) {
@@ -671,14 +630,6 @@ function ServerPreflightBlock({
       {result.nextAction?.url && result.routeSuggestion !== "submit_pr" && (
         <a
           href={result.nextAction.url}
-          onClick={() => {
-            const routeSuggestion = result.routeSuggestion;
-            if (routeSuggestion === "submit_pr") return;
-            trackEvent(
-              submitPreflightNextActionAnalyticsEvent(),
-              submitPreflightNextActionAnalyticsData(category, routeSuggestion),
-            );
-          }}
           className="inline-flex text-sm font-medium text-ink underline"
         >
           {result.nextAction.label}

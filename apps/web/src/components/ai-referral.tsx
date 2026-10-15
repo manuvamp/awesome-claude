@@ -1,7 +1,6 @@
 import * as React from "react";
 
 import { trackEvent } from "@/lib/analytics";
-import { aiReferralAnalyticsData, aiReferralAnalyticsEvent } from "@/lib/ai-referral-cta-events";
 import { matchAiReferrer } from "@/lib/ai-sources";
 
 const SESSION_FLAG = "ai-referral-tracked";
@@ -12,7 +11,7 @@ export function emitAiReferralEvent(source: string, landing: string): boolean {
   if (typeof umami?.track !== "function") return false;
 
   try {
-    trackEvent(aiReferralAnalyticsEvent(), aiReferralAnalyticsData(source, landing));
+    trackEvent("ai-referral", { source, landing });
   } catch {
     return false;
   }

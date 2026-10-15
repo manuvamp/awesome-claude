@@ -5,34 +5,7 @@ import { CHANGELOG, RELEASE_NOTES, type ReleaseStream } from "@/data/changelog";
 import { FilterChip, FilterChipGroup } from "@/components/filter-chip";
 import { PageContainer } from "@/components/page-container";
 import { cn } from "@/lib/utils";
-import { trackEvent } from "@/lib/analytics";
-import {
-  changelogDiffEntryAnalyticsData,
-  changelogDiffEntryAnalyticsEvent,
-  directoryPageEntryDestination,
-} from "@/lib/directory-page-entry-cta-events";
-import {
-  changelogDiffDisclosureAnalyticsData,
-  changelogDiffDisclosureAnalyticsEvent,
-  changelogDiffEgressAnalyticsData,
-  changelogDiffEgressAnalyticsEvent,
-  changelogFeedEgressAnalyticsData,
-  changelogFeedEgressAnalyticsEvent,
-  changelogFeedEgressDestination,
-  changelogPollCopyAnalyticsData,
-  changelogPollCopyAnalyticsEvent,
-  changelogQualityEgressAnalyticsData,
-  changelogQualityEgressAnalyticsEvent,
-  changelogQualityEgressDestination,
-  changelogReadMoreAnalyticsData,
-  changelogReadMoreAnalyticsEvent,
-  changelogStreamFilterAnalyticsData,
-  changelogStreamFilterAnalyticsEvent,
-  type ChangelogStreamFilter,
-} from "@/lib/changelog-page-cta-events";
-import { CopyButton } from "@/components/copy-button";
 import { stringifyJsonLd } from "@/lib/json-ld";
-import { changelogItemListJsonLd } from "@/lib/changelog-jsonld-lib";
 import { absoluteUrl } from "@/lib/seo";
 
 export const Route = createFileRoute("/changelog")({
@@ -70,7 +43,23 @@ export const Route = createFileRoute("/changelog")({
     scripts: [
       {
         type: "application/ld+json",
-        children: stringifyJsonLd(changelogItemListJsonLd(RELEASE_NOTES)),
+        children: stringifyJsonLd({
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          name: "HeyClaude registry changelog",
+          itemListElement: RELEASE_NOTES.map((n, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            item: {
+              "@type": "NewsArticle",
+              headline: n.title,
+              datePublished: n.date,
+              articleSection:
+                n.stream === "release" ? "Releases" : n.stream === "policy" ? "Policy" : "Security",
+              description: n.body,
+            },
+          })),
+        }),
       },
     ],
   }),
@@ -111,17 +100,8 @@ const FILTERS: { id: "all" | ReleaseStream; label: string }[] = [
 const KIND_ICON = { added: Plus, updated: RefreshCw, removed: Minus } as const;
 
 function ChangelogPage() {
-  const [filter, setFilter] = React.useState<ChangelogStreamFilter>("all");
+  const [filter, setFilter] = React.useState<"all" | ReleaseStream>("all");
   const items = RELEASE_NOTES.filter((n) => filter === "all" || n.stream === filter);
-
-  const onStreamFilter = React.useCallback((next: ChangelogStreamFilter) => {
-    setFilter(next);
-    const matchCount = RELEASE_NOTES.filter((n) => next === "all" || n.stream === next).length;
-    trackEvent(
-      changelogStreamFilterAnalyticsEvent(),
-      changelogStreamFilterAnalyticsData(next, matchCount),
-    );
-  }, []);
 
   return (
     <PageContainer className="py-12">
@@ -135,31 +115,18 @@ function ChangelogPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {(["rss", "atom"] as const).map((feedId) => {
-            const destination = changelogFeedEgressDestination(feedId);
-            if (!destination) return null;
-            return (
-              <a
-                key={feedId}
-                href={destination.href}
-                onClick={() =>
-                  trackEvent(
-                    changelogFeedEgressAnalyticsEvent(),
-                    changelogFeedEgressAnalyticsData(feedId, items.length),
-                  )
-                }
-                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink hover:bg-surface-2"
-              >
-                {feedId === "rss" ? (
-                  <>
-                    <Rss className="h-3.5 w-3.5" /> RSS
-                  </>
-                ) : (
-                  "Atom"
-                )}
-              </a>
-            );
-          })}
+          <a
+            href="/feed.xml"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink hover:bg-surface-2"
+          >
+            <Rss className="h-3.5 w-3.5" /> RSS
+          </a>
+          <a
+            href="/atom.xml"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink hover:bg-surface-2"
+          >
+            Atom
+          </a>
         </div>
       </div>
 
@@ -171,7 +138,7 @@ function ChangelogPage() {
               role="radio"
               size="md"
               active={filter === f.id}
-              onClick={() => onStreamFilter(f.id)}
+              onClick={() => setFilter(f.id)}
             >
               {f.label}
             </FilterChip>
@@ -242,20 +209,7 @@ function ChangelogPage() {
                     </div>
                   )}
                   {note.diff && (
-                    <details
-                      className="mt-3 group"
-                      onToggle={(e) =>
-                        trackEvent(
-                          changelogDiffDisclosureAnalyticsEvent(),
-                          changelogDiffDisclosureAnalyticsData(
-                            note.stream,
-                            i,
-                            e.currentTarget.open,
-                            items.length,
-                          ),
-                        )
-                      }
-                    >
+                    <details className="mt-3 group">
                       <summary className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-ink-muted hover:text-ink">
                         What changed in this build →
                       </summary>
@@ -273,43 +227,17 @@ function ChangelogPage() {
                                 <Icon className="h-3 w-3" /> {k} · {items.length}
                               </div>
                               <ul className="space-y-1 text-xs">
-                                {items.map((d, rowIndex) => {
-                                  const destination = directoryPageEntryDestination(
-                                    d.category,
-                                    d.slug,
-                                  );
-                                  if (!destination) {
-                                    return (
-                                      <li key={`${d.category}/${d.slug}`} className="truncate">
-                                        <span className="text-ink">{d.title}</span>
-                                      </li>
-                                    );
-                                  }
-                                  return (
-                                    <li key={`${d.category}/${d.slug}`} className="truncate">
-                                      <Link
-                                        to={destination.to}
-                                        params={destination.params}
-                                        onClick={() =>
-                                          trackEvent(
-                                            changelogDiffEntryAnalyticsEvent(),
-                                            changelogDiffEntryAnalyticsData(
-                                              d.category,
-                                              d.slug,
-                                              k,
-                                              rowIndex,
-                                              items.length,
-                                              note.stream,
-                                            ),
-                                          )
-                                        }
-                                        className="text-ink hover:underline"
-                                      >
-                                        {d.title}
-                                      </Link>
-                                    </li>
-                                  );
-                                })}
+                                {items.map((d) => (
+                                  <li key={`${d.category}/${d.slug}`} className="truncate">
+                                    <Link
+                                      to="/entry/$category/$slug"
+                                      params={{ category: d.category, slug: d.slug }}
+                                      className="text-ink hover:underline"
+                                    >
+                                      {d.title}
+                                    </Link>
+                                  </li>
+                                ))}
                               </ul>
                             </div>
                           );
@@ -318,12 +246,6 @@ function ChangelogPage() {
                       {note.prevHash && (
                         <a
                           href={`/api/registry/diff?from=${encodeURIComponent(note.prevHash)}&to=${encodeURIComponent(note.hash ?? "")}`}
-                          onClick={() =>
-                            trackEvent(
-                              changelogDiffEgressAnalyticsEvent(),
-                              changelogDiffEgressAnalyticsData(note.stream, i, items.length),
-                            )
-                          }
                           className="mt-3 inline-block text-[11px] font-mono text-ink-muted hover:text-ink"
                         >
                           Compare to {note.prevHash} →
@@ -334,12 +256,6 @@ function ChangelogPage() {
                   {note.href && (
                     <Link
                       to={note.href}
-                      onClick={() =>
-                        trackEvent(
-                          changelogReadMoreAnalyticsEvent(),
-                          changelogReadMoreAnalyticsData(note.stream, i, items.length),
-                        )
-                      }
                       className="mt-3 inline-block text-xs font-medium text-ink hover:underline"
                     >
                       Read more →
@@ -358,20 +274,9 @@ function ChangelogPage() {
               Poll the diff endpoint or subscribe via your feed reader. Every payload carries a
               SHA-256.
             </p>
-            <div className="mt-3 overflow-hidden rounded-md bg-background">
-              <div className="flex justify-end border-b border-border px-3 py-1.5">
-                <CopyButton
-                  value="curl https://heyclau.de/api/registry/diff?since=2026-05-19"
-                  label="Copy"
-                  size="sm"
-                  event={changelogPollCopyAnalyticsEvent()}
-                  eventData={changelogPollCopyAnalyticsData(items.length)}
-                />
-              </div>
-              <pre className="overflow-x-auto p-3 font-mono text-[11px] text-ink">
-                {`curl https://heyclau.de/api/registry/diff?since=2026-05-19`}
-              </pre>
-            </div>
+            <pre className="mt-3 overflow-x-auto rounded-md bg-background p-3 font-mono text-[11px] text-ink">
+              {`curl https://heyclau.de/api/registry/diff?since=2026-05-19`}
+            </pre>
           </div>
 
           <div className="rounded-xl border border-border bg-surface p-5">
@@ -399,24 +304,12 @@ function ChangelogPage() {
                 );
               })}
             </ul>
-            {(() => {
-              const destination = changelogQualityEgressDestination("quality");
-              if (!destination) return null;
-              return (
-                <Link
-                  to={destination.to}
-                  onClick={() =>
-                    trackEvent(
-                      changelogQualityEgressAnalyticsEvent(),
-                      changelogQualityEgressAnalyticsData(items.length),
-                    )
-                  }
-                  className="mt-3 inline-block text-xs font-medium text-ink hover:underline"
-                >
-                  See registry quality →
-                </Link>
-              );
-            })()}
+            <Link
+              to="/quality"
+              className="mt-3 inline-block text-xs font-medium text-ink hover:underline"
+            >
+              See registry quality →
+            </Link>
           </div>
         </aside>
       </div>

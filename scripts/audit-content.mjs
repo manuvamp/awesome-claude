@@ -5,6 +5,8 @@ import prettier from "prettier";
 
 import {
   CATEGORY_SCHEMAS,
+  DEFAULT_DIRECTORY_REPO_URL,
+  FORBIDDEN_CONTENT_FIELDS,
   inferSectionBooleans,
   inferStructuredFields,
   normalizeBody,
@@ -12,12 +14,33 @@ import {
 } from "@heyclaude/registry/content-schema";
 import { parseSafeFrontmatter } from "@heyclaude/registry/frontmatter";
 
-import { collectContentIssues } from "./lib/content-audit-issues.mjs";
-import { parseSelectedCategories } from "./lib/selected-categories.mjs";
-
 const repoRoot = process.cwd();
 const contentRoot = path.join(repoRoot, "content");
-const selectedCategories = parseSelectedCategories(process.argv.slice(2));
+const selectedCategories = new Set();
+
+for (let index = 2; index < process.argv.length; index += 1) {
+  const arg = process.argv[index];
+  if (arg === "--category" || arg === "--categories") {
+    const value = process.argv[index + 1] || "";
+    for (const category of value.split(",")) {
+      const normalized = category.trim();
+      if (normalized) selectedCategories.add(normalized);
+    }
+    index += 1;
+  } else if (arg.startsWith("--category=")) {
+    const value = arg.slice("--category=".length);
+    for (const category of value.split(",")) {
+      const normalized = category.trim();
+      if (normalized) selectedCategories.add(normalized);
+    }
+  } else if (arg.startsWith("--categories=")) {
+    const value = arg.slice("--categories=".length);
+    for (const category of value.split(",")) {
+      const normalized = category.trim();
+      if (normalized) selectedCategories.add(normalized);
+    }
+  }
+}
 
 const reportPath =
   selectedCategories.size > 0
@@ -29,6 +52,14 @@ const reportPath =
     : path.join(repoRoot, "content/data/content-audit.json");
 
 const report = [];
+const oldBrandOrDomainPattern = new RegExp(
+  `${["claude", "pro"].join("")}\\.directory|${[
+    "Claude",
+    " Pro ",
+    "Directory",
+  ].join("")}`,
+  "i",
+);
 
 for (const category of Object.keys(CATEGORY_SCHEMAS)) {
   if (selectedCategories.size > 0 && !selectedCategories.has(category)) {
@@ -52,12 +83,81 @@ for (const category of Object.keys(CATEGORY_SCHEMAS)) {
     );
     const validation = validateEntry(category, parsed.data, inferred);
     const sectionFlags = inferSectionBooleans(normalizedBody);
-    const issues = collectContentIssues({
-      data: parsed.data,
-      source,
-      category,
-      sectionFlags,
-    });
+    const issues = [];
+
+    if (parsed.data.repoUrl === DEFAULT_DIRECTORY_REPO_URL) {
+      issues.push("uses_default_directory_repo_url");
+    }
+
+    if (String(parsed.data.description ?? "").trim().length > 320) {
+      issues.push("description_too_long");
+    }
+
+    if (!String(parsed.data.seoTitle ?? "").trim()) {
+      issues.push("missing_seoTitle");
+    }
+
+    if (!String(parsed.data.seoDescription ?? "").trim()) {
+      issues.push("missing_seoDescription");
+    }
+
+    if (
+      !Array.isArray(parsed.data.keywords) ||
+      parsed.data.keywords.length === 0
+    ) {
+      issues.push("missing_keywords");
+    }
+
+    if (oldBrandOrDomainPattern.test(source)) {
+      issues.push("old_brand_or_domain_reference");
+    }
+
+    if (/\[Script content from first example\]/.test(source)) {
+      issues.push("placeholder_script_marker");
+    }
+
+    if (
+      parsed.data.category &&
+      String(parsed.data.category).trim() !== category
+    ) {
+      issues.push("category_mismatch");
+    }
+
+    for (const field of FORBIDDEN_CONTENT_FIELDS) {
+      if (parsed.data[field] !== undefined) {
+        issues.push(`forbidden_field_${field}`);
+      }
+    }
+
+    if (
+      category === "guides" &&
+      parsed.data.copySnippet &&
+      String(parsed.data.copySnippet).trim()
+    ) {
+      issues.push("guide_copy_snippet_present");
+    }
+
+    if (
+      category === "collections" &&
+      parsed.data.copySnippet &&
+      String(parsed.data.copySnippet).trim()
+    ) {
+      issues.push("collection_copy_snippet_present");
+    }
+
+    if (
+      parsed.data.hasPrerequisites === false &&
+      sectionFlags.hasPrerequisites
+    ) {
+      issues.push("hasPrerequisites_false_but_section_exists");
+    }
+
+    if (
+      parsed.data.hasTroubleshooting === false &&
+      sectionFlags.hasTroubleshooting
+    ) {
+      issues.push("hasTroubleshooting_false_but_section_exists");
+    }
 
     report.push({
       category,

@@ -22,8 +22,6 @@ import {
   buildEntrySummary,
   buildSuggestChangeUrl,
   categoryLabel,
-  entryHasConfigSnippet,
-  entryHasInstallCommand,
   entryKey,
   filterDiscoveryEntries,
   parseFavoriteKeys,
@@ -34,10 +32,6 @@ import {
   type RaycastEntry,
 } from "./feed";
 import {
-  CreateConfigSnippetAction,
-  CreateInstallSnippetAction,
-} from "./create-snippet-actions";
-import {
   fetchFreshFeed,
   fetchFreshRecentUpdates,
   fetchFreshTrending,
@@ -47,7 +41,7 @@ import {
   loadEntryDetail,
 } from "./runtime";
 import { markdownLink, withRaycastUtm } from "./links";
-import { entryDetailMetadata } from "./raycast-ui";
+import { entryDetailMetadata, entrySnippetKeyword } from "./raycast-ui";
 
 const cache = new Cache();
 
@@ -345,54 +339,6 @@ export function createDiscoveryCommand(options: DiscoveryCommandOptions) {
       }
     }
 
-    async function copyInstallCommand(entry: RaycastDiscoveryEntry) {
-      try {
-        const detail = await loadEntryDetail({
-          entry,
-          cache,
-          feedUrl: configuredFeed.feedUrl,
-        });
-        const installCommand = detail.installCommand || entry.installCommand;
-        if (!installCommand.trim()) {
-          throw new Error("No install command is available for this entry.");
-        }
-        await Clipboard.copy(installCommand);
-        await showHUD(`Copied ${entry.title} install command`, {
-          popToRootType: PopToRootType.Immediate,
-        });
-      } catch (error) {
-        await showToast({
-          style: Toast.Style.Failure,
-          title: "Could not copy install command",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    }
-
-    async function copyConfigSnippet(entry: RaycastDiscoveryEntry) {
-      try {
-        const detail = await loadEntryDetail({
-          entry,
-          cache,
-          feedUrl: configuredFeed.feedUrl,
-        });
-        const configSnippet = detail.configSnippet || entry.configSnippet;
-        if (!configSnippet.trim()) {
-          throw new Error("No config snippet is available for this entry.");
-        }
-        await Clipboard.copy(configSnippet);
-        await showHUD(`Copied ${entry.title} config`, {
-          popToRootType: PopToRootType.Immediate,
-        });
-      } catch (error) {
-        await showToast({
-          style: Toast.Style.Failure,
-          title: "Could not copy config",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    }
-
     async function toggleFavorite(entry: RaycastDiscoveryEntry) {
       const key = entryKey(entry);
       const next = new Set(favorites);
@@ -440,8 +386,8 @@ export function createDiscoveryCommand(options: DiscoveryCommandOptions) {
       >
         {displayedEntries.map((entry) => {
           const isFavorite = favorites.has(entryKey(entry));
-          const hasInstallCommand = entryHasInstallCommand(entry);
-          const hasConfig = entryHasConfigSnippet(entry);
+          const hasInstallCommand = Boolean(entry.installCommand.trim());
+          const hasConfig = Boolean(entry.configSnippet.trim());
           const webUrl = withRaycastUtm(entry.webUrl, options.kind);
 
           return (
@@ -482,19 +428,17 @@ export function createDiscoveryCommand(options: DiscoveryCommandOptions) {
                       onAction={() => void pasteFullAsset(entry)}
                     />
                     {hasInstallCommand ? (
-                      <Action
+                      <Action.CopyToClipboard
                         title="Copy Install Command"
-                        icon={Icon.Terminal}
+                        content={entry.installCommand}
                         shortcut={{ modifiers: ["cmd"], key: "i" }}
-                        onAction={() => void copyInstallCommand(entry)}
                       />
                     ) : null}
                     {hasConfig ? (
-                      <Action
+                      <Action.CopyToClipboard
                         title="Copy Config"
-                        icon={Icon.Code}
+                        content={entry.configSnippet}
                         shortcut={{ modifiers: ["cmd"], key: "." }}
-                        onAction={() => void copyConfigSnippet(entry)}
                       />
                     ) : null}
                     <Action.OpenInBrowser
@@ -545,17 +489,26 @@ export function createDiscoveryCommand(options: DiscoveryCommandOptions) {
                       }}
                     />
                     {hasInstallCommand ? (
-                      <CreateInstallSnippetAction
-                        entry={entry}
-                        cache={cache}
-                        feedUrl={configuredFeed.feedUrl}
+                      <Action.CreateSnippet
+                        title="Create Install Snippet"
+                        snippet={{
+                          name: `${entry.title} install`,
+                          text: entry.installCommand,
+                          keyword: entrySnippetKeyword(entry),
+                        }}
                       />
                     ) : null}
                     {hasConfig ? (
-                      <CreateConfigSnippetAction
-                        entry={entry}
-                        cache={cache}
-                        feedUrl={configuredFeed.feedUrl}
+                      <Action.CreateSnippet
+                        title="Create Config Snippet"
+                        snippet={{
+                          name: `${entry.title} config`,
+                          text: entry.configSnippet,
+                          keyword: `${entrySnippetKeyword(entry)}-config`.slice(
+                            0,
+                            40,
+                          ),
+                        }}
                       />
                     ) : null}
                   </ActionPanel.Section>

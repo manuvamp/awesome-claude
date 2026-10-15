@@ -20,20 +20,10 @@ const HARNESS_COVERAGE: Record<string, { count: number; pct: number }> = Object.
   }),
 );
 
-export function HarnessCoverage({
-  onBrowseClick,
-}: {
-  onBrowseClick?: (
-    platformId: string,
-    entryCount: number,
-    coveragePct: number,
-    rowIndex: number,
-    harnessCount: number,
-  ) => void;
-}) {
+export function HarnessCoverage() {
   return (
     <div className="grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {HARNESSES.map((h, rowIndex) => {
+      {HARNESSES.map((h) => {
         const { count, pct } = HARNESS_COVERAGE[h.id];
         const mark = platformMark(h.id);
         return (
@@ -41,7 +31,6 @@ export function HarnessCoverage({
             key={h.id}
             to="/browse"
             search={{ platform: h.id }}
-            onClick={() => onBrowseClick?.(h.id, count, pct, rowIndex, HARNESSES.length)}
             className="group flex flex-col gap-3 bg-surface p-4 transition-colors duration-200 ease-out hover:bg-surface-2"
             aria-label={`Browse ${count} entries compatible with ${h.label}`}
           >

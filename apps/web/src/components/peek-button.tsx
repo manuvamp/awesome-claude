@@ -22,41 +22,12 @@ import {
 } from "./badges";
 import { CopySegmented, variantsForEntry } from "./copy-segmented";
 import { EntryBrandMark } from "./entry-brand-mark";
-import { HarnessBadge } from "./harness-badge";
 import { HarnessVariantPicker } from "./harness-variant-picker";
 import { useHarnessPref, useCopyPref, type CopyVariant } from "@/lib/dossier-prefs";
 import { entryDomId } from "@/lib/entry-identity";
 import { cn } from "@/lib/utils";
 import { setHotPeek, clearHotPeek, installPeekShortcut } from "@/lib/peek-hotkey";
 import { LazyEntryAuthorAttribution, LazyLinkedSourceCitations } from "./lazy-linked-attribution";
-import { trackEvent } from "@/lib/analytics";
-import {
-  peekCopyAnalyticsData,
-  peekCopyAnalyticsEvent,
-  peekCopyIntentType,
-  peekPanelActionAnalyticsData,
-  peekPanelActionAnalyticsEvent,
-  peekPanelOpenAnalyticsData,
-  peekPanelOpenAnalyticsEvent,
-  peekPanelCategoryDestination,
-  peekPanelEntryDestination,
-  peekSnippetVariantSelectAnalyticsData,
-  peekSnippetVariantSelectAnalyticsEvent,
-  PEEK_PANEL_SURFACE,
-} from "@/lib/peek-panel-cta-events";
-import {
-  badgeChromeCategoryAnalyticsData,
-  badgeChromeCategoryAnalyticsEvent,
-  badgeChromeSourceAnalyticsData,
-  badgeChromeSourceAnalyticsEvent,
-  badgeChromeTrustAnalyticsData,
-  badgeChromeTrustAnalyticsEvent,
-} from "@/lib/badge-chrome-cta-events";
-import {
-  harnessVariantSelectAnalyticsData,
-  harnessVariantSelectAnalyticsEvent,
-} from "@/lib/harness-variant-cta-events";
-import { recordIntentEvent } from "@/lib/intent-event-client";
 
 export interface PeekHandle {
   open: () => void;
@@ -78,30 +49,12 @@ export const PeekButton = React.forwardRef<PeekHandle, Props>(function PeekButto
 ) {
   const peekId = entryDomId(entry);
   const [open, setOpen] = React.useState(false);
-  const openRef = React.useRef(open);
-  openRef.current = open;
-
-  const handleOpenChange = React.useCallback(
-    (next: boolean) => {
-      if (next && !openRef.current) {
-        trackEvent(
-          peekPanelOpenAnalyticsEvent(),
-          peekPanelOpenAnalyticsData(entry.category, entry.slug),
-        );
-      }
-      setOpen(next);
-    },
-    [entry.category, entry.slug],
-  );
-
-  React.useImperativeHandle(ref, () => ({ open: () => handleOpenChange(true) }), [
-    handleOpenChange,
-  ]);
+  React.useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
   React.useEffect(() => {
     installPeekShortcut();
   }, []);
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
+    <Sheet open={open} onOpenChange={setOpen}>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -139,8 +92,6 @@ export const PeekButton = React.forwardRef<PeekHandle, Props>(function PeekButto
 });
 
 function PeekBody({ entry, peekId }: { entry: Entry; peekId: string }) {
-  const categoryDestination = peekPanelCategoryDestination(entry.category);
-  const entryDestination = peekPanelEntryDestination(entry.category, entry.slug);
   const harnessAvailable = React.useMemo<Harness[]>(
     () => (entry.harnessVariants ? (Object.keys(entry.harnessVariants) as Harness[]) : []),
     [entry.harnessVariants],
@@ -148,79 +99,14 @@ function PeekBody({ entry, peekId }: { entry: Entry; peekId: string }) {
   const [harness, setHarness] = useHarnessPref(entry.category, entry.slug, harnessAvailable);
   const variants = React.useMemo(() => variantsForEntry(entry, harness), [entry, harness]);
 
-  const onPeekCopy = React.useCallback(
-    (variant: CopyVariant) => {
-      trackEvent(
-        peekCopyAnalyticsEvent(variant),
-        peekCopyAnalyticsData(entry.category, entry.slug, variant),
-      );
-      void recordIntentEvent(peekCopyIntentType(variant), entry);
-    },
-    [entry],
-  );
-
-  const onPeekVariantSelect = React.useCallback(
-    (variant: CopyVariant) => {
-      trackEvent(
-        peekSnippetVariantSelectAnalyticsEvent(),
-        peekSnippetVariantSelectAnalyticsData(entry.category, entry.slug, variant),
-      );
-    },
-    [entry.category, entry.slug],
-  );
-
-  const onPeekAction = React.useCallback(
-    (action: "dossier" | "source" | "docs") => {
-      trackEvent(
-        peekPanelActionAnalyticsEvent(action),
-        peekPanelActionAnalyticsData(entry.category, entry.slug, action),
-      );
-      if (action === "source") void recordIntentEvent("open", entry);
-    },
-    [entry],
-  );
-
   return (
     <>
       <SheetHeader className="space-y-3 text-left">
         <div className="flex flex-wrap items-center gap-1.5">
-          {categoryDestination ? (
-            <Link
-              to={categoryDestination.to}
-              search={categoryDestination.search}
-              onClick={() =>
-                trackEvent(
-                  badgeChromeCategoryAnalyticsEvent(),
-                  badgeChromeCategoryAnalyticsData(entry.category, "peek-panel"),
-                )
-              }
-            >
-              <CategoryPill>{entry.category}</CategoryPill>
-            </Link>
-          ) : (
-            <CategoryPill>{entry.category}</CategoryPill>
-          )}
-          <TrustBadge
-            level={entry.trust}
-            asLink
-            onNavigate={() =>
-              trackEvent(
-                badgeChromeTrustAnalyticsEvent(),
-                badgeChromeTrustAnalyticsData(entry.trust, "peek-panel"),
-              )
-            }
-          />
-          <SourceBadge
-            status={entry.source}
-            asLink
-            onNavigate={() =>
-              trackEvent(
-                badgeChromeSourceAnalyticsEvent(),
-                badgeChromeSourceAnalyticsData(entry.source, "peek-panel"),
-              )
-            }
-          />
-          <InstallRiskBadge entry={entry} size="xs" asLink surface="peek-panel" />
+          <CategoryPill>{entry.category}</CategoryPill>
+          <TrustBadge level={entry.trust} />
+          <SourceBadge status={entry.source} />
+          <InstallRiskBadge entry={entry} size="xs" />
         </div>
         <div className="flex min-w-0 items-start gap-3">
           <EntryBrandMark entry={entry} size="md" priority className="mt-0.5" />
@@ -244,7 +130,7 @@ function PeekBody({ entry, peekId }: { entry: Entry; peekId: string }) {
               {entry.repoStats.stars.toLocaleString()} repo
             </span>
           )}
-          <NotesPresenceChips entry={entry} className="ml-auto" asLink surface="peek-panel" />
+          <NotesPresenceChips entry={entry} className="ml-auto" />
         </div>
       </SheetHeader>
 
@@ -252,16 +138,7 @@ function PeekBody({ entry, peekId }: { entry: Entry; peekId: string }) {
         <div className="mt-4 flex flex-wrap items-center gap-1">
           <span className="eyebrow mr-1">Platforms</span>
           {entry.platforms.map((p) => (
-            <PlatformChip key={p} id={p} asLink surface="peek-panel" />
-          ))}
-        </div>
-      )}
-
-      {entry.harness && entry.harness.length > 0 && (
-        <div className="mt-4 flex flex-wrap items-center gap-1.5">
-          <span className="eyebrow mr-1">Harness</span>
-          {entry.harness.map((h) => (
-            <HarnessBadge key={h} id={h} asLink surface="peek-panel" />
+            <PlatformChip key={p} id={p} />
           ))}
         </div>
       )}
@@ -276,17 +153,6 @@ function PeekBody({ entry, peekId }: { entry: Entry; peekId: string }) {
             value={harness as Harness | null}
             onChange={setHarness}
             labelId={`peek-harness-${peekId}`}
-            onVariantSelect={(nextHarness) =>
-              trackEvent(
-                harnessVariantSelectAnalyticsEvent(),
-                harnessVariantSelectAnalyticsData(
-                  entry.category,
-                  entry.slug,
-                  PEEK_PANEL_SURFACE,
-                  nextHarness,
-                ),
-              )
-            }
           />
         </div>
       )}
@@ -300,8 +166,6 @@ function PeekBody({ entry, peekId }: { entry: Entry; peekId: string }) {
             variants={variants}
             entryTitle={entry.title}
             labelId={`peek-snippet-${peekId}`}
-            onCopied={onPeekCopy}
-            onVariantSelect={onPeekVariantSelect}
           />
         </div>
         {variants.find((v) => v.id === variants.find((x) => x.value)?.id)?.value && (
@@ -315,22 +179,18 @@ function PeekBody({ entry, peekId }: { entry: Entry; peekId: string }) {
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
-        {entryDestination ? (
-          <Link
-            to={entryDestination.to}
-            params={entryDestination.params}
-            onClick={() => onPeekAction("dossier")}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-ink px-3 text-xs font-medium text-background hover:bg-ink/90"
-          >
-            Open dossier <ArrowUpRight className="h-3 w-3" />
-          </Link>
-        ) : null}
+        <Link
+          to="/entry/$category/$slug"
+          params={{ category: entry.category, slug: entry.slug }}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-ink px-3 text-xs font-medium text-background hover:bg-ink/90"
+        >
+          Open dossier <ArrowUpRight className="h-3 w-3" />
+        </Link>
         {entry.sourceUrl && (
           <a
             href={entry.sourceUrl}
             target="_blank"
             rel="noreferrer"
-            onClick={() => onPeekAction("source")}
             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-2"
           >
             <GitBranch className="h-3.5 w-3.5" /> Source <ExternalLink className="h-3 w-3" />
@@ -341,7 +201,6 @@ function PeekBody({ entry, peekId }: { entry: Entry; peekId: string }) {
             href={entry.docsUrl}
             target="_blank"
             rel="noreferrer"
-            onClick={() => onPeekAction("docs")}
             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-2"
           >
             <BookOpen className="h-3.5 w-3.5" /> Docs <ExternalLink className="h-3 w-3" />

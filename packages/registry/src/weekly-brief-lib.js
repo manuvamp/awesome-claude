@@ -10,7 +10,6 @@
  * re-exports everything below so existing imports stay unchanged.
  */
 import { generatedAtForEntries, SITE_URL, truncateText } from "./artifacts.js";
-import { publicHttpUrlHref } from "./source-url-lib.js";
 
 export const WEEKLY_BRIEF_SCHEMA_VERSION = 1;
 
@@ -38,7 +37,16 @@ export function keyFor(entry) {
 }
 
 export function httpUrl(value) {
-  return publicHttpUrlHref(value);
+  const normalized = text(value);
+  if (!normalized) return "";
+  try {
+    const url = new URL(normalized);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.href
+      : "";
+  } catch {
+    return "";
+  }
 }
 
 export function siteUrlBase(siteUrl) {
@@ -213,13 +221,8 @@ export function itemFromEntry(entry, reasons, siteUrl) {
     dateAdded: isoDate(entry.dateAdded),
     reasons,
     sourceUrls: sourceUrls(entry).slice(0, 4),
-    // Fall back to the `trustSignals.has*` booleans: the production directory
-    // index drops the raw arrays, so counting them alone reports 0 in every
-    // real brief. Keeps the exact count when the fuller entry shape has it.
-    safetyNotesCount:
-      list(entry.safetyNotes).length || (hasSafetyNotes(entry) ? 1 : 0),
-    privacyNotesCount:
-      list(entry.privacyNotes).length || (hasPrivacyNotes(entry) ? 1 : 0),
+    safetyNotesCount: list(entry.safetyNotes).length,
+    privacyNotesCount: list(entry.privacyNotes).length,
     downloadTrust: entry.downloadTrust || null,
     packageVerified: entry.packageVerified === true,
   };
@@ -230,15 +233,15 @@ export function newEntryReasons(entry) {
   const date = isoDate(entry.dateAdded);
   if (date) reasons.push(`added ${date}`);
   if (hasSource(entry)) reasons.push("source-backed");
-  if (hasSafetyNotes(entry)) reasons.push("has safety notes");
-  if (hasPrivacyNotes(entry)) reasons.push("has privacy notes");
+  if (list(entry.safetyNotes).length) reasons.push("has safety notes");
+  if (list(entry.privacyNotes).length) reasons.push("has privacy notes");
   return reasons.length ? reasons : ["new registry entry"];
 }
 
 export function sourceBackedReasons(entry) {
   const reasons = ["source-backed"];
-  if (hasSafetyNotes(entry)) reasons.push("safety notes present");
-  if (hasPrivacyNotes(entry)) reasons.push("privacy notes present");
+  if (list(entry.safetyNotes).length) reasons.push("safety notes present");
+  if (list(entry.privacyNotes).length) reasons.push("privacy notes present");
   if (entry.claimStatus === "verified") reasons.push("verified claim");
   if (entry.reviewedBy) reasons.push("reviewed metadata");
   return reasons;
@@ -248,12 +251,7 @@ export function saferInstallReasons(entry) {
   const reasons = [];
   if (entry.downloadTrust === "first-party")
     reasons.push("first-party package");
-  if (
-    entry.packageVerified === true ||
-    entry.trustSignals?.packageVerified === true
-  ) {
-    reasons.push("package verified");
-  }
+  if (entry.packageVerified === true) reasons.push("package verified");
   if (entry.downloadSha256 || entry.trustSignals?.checksumPresent) {
     reasons.push("checksum present");
   }

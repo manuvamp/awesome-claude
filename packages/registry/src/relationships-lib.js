@@ -88,8 +88,6 @@ export function normalizeUrl(value) {
 
   try {
     const url = new URL(text);
-    url.username = "";
-    url.password = "";
     url.hash = "";
     for (const key of [...url.searchParams.keys()]) {
       if (
@@ -102,12 +100,9 @@ export function normalizeUrl(value) {
       }
     }
     url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
-    // Strip trailing slashes before the terminal ".git" so a URL like
-    // ".../repo.git/" collapses to the same value as ".../repo.git"; otherwise
-    // the ".git$" anchor misses and the two forms produce different repo keys.
     url.pathname = url.pathname
-      .replace(/\/+$/, "")
       .replace(/\.git$/, "")
+      .replace(/\/+$/, "")
       .toLowerCase();
     url.searchParams.sort();
     return url.toString().replace(/\/$/, "");
@@ -133,15 +128,6 @@ export function sourceUrls(entry) {
         ? entry.downloadUrl
         : "",
       ...(Array.isArray(entry.retrievalSources) ? entry.retrievalSources : []),
-      // Other first-class, schema-validated source-link fields that
-      // content-builder copies onto every entry. Without these, entries that
-      // share only a docs/source/package/repository link (or the plural
-      // sourceUrls[]) are invisible to relationship candidate-building.
-      entry.docsUrl,
-      entry.sourceUrl,
-      entry.packageUrl,
-      entry.repositoryUrl,
-      ...(Array.isArray(entry.sourceUrls) ? entry.sourceUrls : []),
     ]
       .map(normalizeUrl)
       .filter(Boolean),
@@ -416,21 +402,23 @@ export function buildRegistryRelationGraph(entries, params = {}) {
     url: entryUrl(entry),
     related: buildEntryRelations(entry, candidatesFor(entry), { limit }),
   }));
-  const latestEntryDate = entries
-    .map((entry) =>
-      String(entry.contentUpdatedAt || entry.dateAdded || "").slice(0, 10),
-    )
-    .filter(Boolean)
-    .sort()
-    .at(-1);
 
   return {
     schemaVersion: 1,
     kind: "registry-relation-graph",
     generatedAt:
       params.generatedAt ||
-      (latestEntryDate
-        ? `${latestEntryDate}T00:00:00.000Z`
+      (entries[0]?.dateAdded
+        ? `${entries
+            .map((entry) =>
+              String(entry.contentUpdatedAt || entry.dateAdded || "").slice(
+                0,
+                10,
+              ),
+            )
+            .filter(Boolean)
+            .sort()
+            .at(-1)}T00:00:00.000Z`
         : "1970-01-01T00:00:00.000Z"),
     relationTypes: REGISTRY_RELATION_TYPES,
     maxRelationsPerEntry: limit,

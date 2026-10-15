@@ -9,11 +9,18 @@ import {
   renderWeeklyBriefMarkdown,
 } from "@heyclaude/registry/weekly-brief";
 
-import { argValue, envelopeEntries, hasFlag } from "./lib/weekly-brief-cli.mjs";
-
 const repoRoot = process.cwd();
 const defaultDataDir = path.join(repoRoot, "apps/web/public/data");
-const cliArgs = process.argv.slice(2);
+
+function argValue(name, fallback = "") {
+  const prefix = `${name}=`;
+  const match = process.argv.slice(2).find((arg) => arg.startsWith(prefix));
+  return match ? match.slice(prefix.length) : fallback;
+}
+
+function hasFlag(name) {
+  return process.argv.slice(2).includes(name);
+}
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
@@ -31,6 +38,13 @@ function readJson(filePath, artifactName) {
   }
 }
 
+function envelopeEntries(payload, label) {
+  if (!payload || !Array.isArray(payload.entries)) {
+    throw new Error(`${label} must contain an entries array.`);
+  }
+  return payload.entries;
+}
+
 function usage() {
   return [
     "Usage: pnpm brief:weekly [--format=markdown|json] [--days=7] [--data-dir=apps/web/public/data]",
@@ -40,17 +54,14 @@ function usage() {
   ].join("\n");
 }
 
-if (hasFlag("--help", cliArgs) || hasFlag("-h", cliArgs)) {
+if (hasFlag("--help") || hasFlag("-h")) {
   console.log(usage());
   process.exit(0);
 }
 
-const format = argValue("--format", cliArgs, "markdown");
-const days = Number(argValue("--days", cliArgs, "7"));
-const dataDir = path.resolve(
-  repoRoot,
-  argValue("--data-dir", cliArgs, defaultDataDir),
-);
+const format = argValue("--format", "markdown");
+const days = Number(argValue("--days", "7"));
+const dataDir = path.resolve(repoRoot, argValue("--data-dir", defaultDataDir));
 
 if (!["markdown", "json"].includes(format)) {
   console.error("Invalid --format. Expected markdown or json.");

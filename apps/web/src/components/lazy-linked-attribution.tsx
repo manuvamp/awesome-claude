@@ -1,7 +1,6 @@
 import * as React from "react";
 import type { Entry } from "@/types/registry";
 import { EntryAttributionLabel } from "./entry-attribution-label";
-import { PEEK_PANEL_SURFACE } from "@/lib/peek-panel-cta-events";
 
 const LinkedAttribution = React.lazy(async () => {
   const module = await import("./contributor-attribution");
@@ -18,7 +17,6 @@ const LinkedSourceCitations = React.lazy(async () => {
       return (
         <SourceCitations
           entry={entry}
-          surface={PEEK_PANEL_SURFACE}
           resolveContributorSlug={(name, profileUrl) =>
             findContributorForIdentity(name, profileUrl)?.slug
           }

@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getEntry } from "@/data/search";
 import { categoryAccent } from "@/lib/og-image";
-import { ogEntryCardFields } from "@/lib/og-entry-card-lib";
-import { maybeOgRateLimitedResponse } from "@/lib/og-rate-limit-lib";
 import { renderOgPng } from "@/lib/og-render.server";
 
 /**
@@ -13,16 +11,13 @@ import { renderOgPng } from "@/lib/og-render.server";
 export const Route = createFileRoute("/og/$category/$slug")({
   server: {
     handlers: {
-      GET: async ({ request, params }) => {
-        // Same expensive Satori path as /api/og — enforce the same ceiling (#5452).
-        const limited = await maybeOgRateLimitedResponse(request);
-        if (limited) return limited;
+      GET: async ({ params }) => {
         const entry = getEntry(params.category, params.slug);
-        const { title, description, author, category } = ogEntryCardFields(
-          entry,
-          params.slug,
-          params.category,
-        );
+        const title = entry?.title ?? params.slug;
+        const description =
+          entry?.cardDescription ?? entry?.description ?? "Curated in the HeyClaude registry.";
+        const author = entry?.author ?? "HeyClaude";
+        const category = entry?.category ?? params.category;
 
         const image = await renderOgPng({
           // The category is the highlighted eyebrow; its accent color-codes the swash + rail.

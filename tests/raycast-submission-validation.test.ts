@@ -18,11 +18,6 @@ describe("normalizeDomain", () => {
     expect(normalizeDomain("Example.COM")).toBe("example.com");
   });
 
-  it("rejects URL-form brand domains with embedded userinfo", () => {
-    expect(normalizeDomain("https://token@asana.com")).toBe("");
-    expect(isValidDomain("https://token@asana.com")).toBe(false);
-  });
-
   it("returns an empty string for empty or missing input", () => {
     // The parameter is declared `value?: string`, so a missing/blank value is
     // a supported call shape that normalizes to "".
@@ -38,11 +33,6 @@ describe("isValidHttpsUrl", () => {
     expect(isValidHttpsUrl("http://example.com")).toBe(false);
     expect(isValidHttpsUrl("not a url")).toBe(false);
     expect(isValidHttpsUrl("")).toBe(false);
-  });
-
-  it("rejects https URLs with embedded userinfo credentials", () => {
-    expect(isValidHttpsUrl("https://token@github.com/owner/repo")).toBe(false);
-    expect(isValidHttpsUrl("https://user:pass@example.com/docs")).toBe(false);
   });
 });
 

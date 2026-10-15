@@ -16,7 +16,6 @@ export function FilterChip({
   size = "sm",
   count,
   disabled,
-  preserveCase = false,
 }: {
   active: boolean;
   onClick: () => void;
@@ -27,12 +26,6 @@ export function FilterChip({
   count?: number;
   /** Visually de-emphasize without removing from tab order. */
   disabled?: boolean;
-  /**
-   * Opt out of the default `capitalize`. Set when the caller already supplies a
-   * correctly-cased label — `capitalize` would otherwise mangle acronyms and
-   * hyphenated compounds ("VS Code", "First-party").
-   */
-  preserveCase?: boolean;
 }) {
   const dim = disabled || count === 0;
   return (
@@ -43,8 +36,7 @@ export function FilterChip({
       aria-disabled={dim || undefined}
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border",
-        !preserveCase && "capitalize",
+        "inline-flex items-center gap-1.5 rounded-md border capitalize",
         "transition-[transform,background-color,border-color,color] duration-200 ease-out",
         "motion-safe:active:scale-[0.97]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",

@@ -1,5 +1,4 @@
 import { parseSafeFrontmatter } from "../../../packages/registry/src/frontmatter.js";
-import { publicUrlHostname } from "../../../packages/registry/src/source-url-lib.js";
 
 export type ContentDuplicateSignals = {
   filePath: string;
@@ -186,8 +185,6 @@ function normalizeUrl(value: unknown) {
   try {
     const parsed = new URL(raw);
     if (!["http:", "https:"].includes(parsed.protocol)) return "";
-    parsed.username = "";
-    parsed.password = "";
     parsed.protocol = "https:";
     parsed.hostname = normalizeHostname(parsed.hostname);
     parsed.hash = "";
@@ -233,8 +230,11 @@ function normalizeUrl(value: unknown) {
 }
 
 function domainFromUrl(value: string) {
-  const hostname = publicUrlHostname(value);
-  return hostname ? normalizeHostname(hostname) : "";
+  try {
+    return normalizeHostname(new URL(value).hostname);
+  } catch {
+    return "";
+  }
 }
 
 function pathParts(filePath: string) {

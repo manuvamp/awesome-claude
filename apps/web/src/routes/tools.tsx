@@ -6,25 +6,6 @@ import { EntryBrandMark } from "@/components/entry-brand-mark";
 import { breadcrumbScript, itemListScript } from "@/lib/seo-jsonld";
 import { absoluteUrl } from "@/lib/seo";
 import { ogImageUrl } from "@/lib/og-image";
-import { trackEvent } from "@/lib/analytics";
-import {
-  directoryPageEntryDestination,
-  toolsDirectoryEntryAnalyticsData,
-  toolsDirectoryEntryAnalyticsEvent,
-} from "@/lib/directory-page-entry-cta-events";
-import {
-  toolsPageBrowseAnalyticsData,
-  toolsPageBrowseAnalyticsEvent,
-  toolsPageChromeDestination,
-  toolsPageSubmitAnalyticsData,
-  toolsPageSubmitAnalyticsEvent,
-  toolsPageTagAnalyticsData,
-  toolsPageTagAnalyticsEvent,
-  toolsPageTagDestination,
-} from "@/lib/tools-page-cta-events";
-
-// Same card for og:image and twitter:image; the inputs are static.
-const OG_IMAGE = ogImageUrl({ title: "Tools that pair well with Claude", eyebrow: "Tools" });
 
 export const Route = createFileRoute("/tools")({
   head: () => ({
@@ -43,14 +24,14 @@ export const Route = createFileRoute("/tools")({
       { property: "og:url", content: absoluteUrl("/tools") },
       {
         property: "og:image",
-        content: OG_IMAGE,
+        content: ogImageUrl({ title: "Tools that pair well with Claude", eyebrow: "Tools" }),
       },
       { property: "og:image:type", content: "image/png" },
       { property: "og:image:width", content: "1200" },
       { property: "og:image:height", content: "630" },
       {
         name: "twitter:image",
-        content: OG_IMAGE,
+        content: ogImageUrl({ title: "Tools that pair well with Claude", eyebrow: "Tools" }),
       },
     ],
     links: [{ rel: "canonical", href: absoluteUrl("/tools") }],
@@ -60,10 +41,7 @@ export const Route = createFileRoute("/tools")({
         { name: "Tools", path: "/tools" },
       ]),
       itemListScript(
-        // Every tool the grid below renders, matching the other index routes
-        // that pass their full array. A truncated ItemList advertised fewer
-        // items to crawlers than the page actually shows (#5593).
-        COMMERCIAL_TOOLS.map((t) => ({
+        COMMERCIAL_TOOLS.slice(0, 30).map((t) => ({
           name: t.name,
           path: `/entry/tools/${t.slug}`,
         })),
@@ -75,9 +53,6 @@ export const Route = createFileRoute("/tools")({
 });
 
 function ToolsPage() {
-  const browseDestination = toolsPageChromeDestination("browse");
-  const submitDestination = toolsPageChromeDestination("submit");
-
   return (
     <PageContainer>
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -88,151 +63,58 @@ function ToolsPage() {
           </h1>
           <p className="mt-2 max-w-2xl text-ink-muted">
             Editorial picks and disclosed partners. Free, open-source community resources live in{" "}
-            {browseDestination ? (
-              <Link
-                to={browseDestination.to}
-                onClick={() =>
-                  trackEvent(
-                    toolsPageBrowseAnalyticsEvent(),
-                    toolsPageBrowseAnalyticsData(COMMERCIAL_TOOLS.length),
-                  )
-                }
-                className="text-ink underline"
-              >
-                the directory
-              </Link>
-            ) : (
-              "the directory"
-            )}
+            <Link to="/browse" className="text-ink underline">
+              the directory
+            </Link>
             .
           </p>
         </div>
-        {submitDestination ? (
-          <Link
-            to={submitDestination.to}
-            onClick={() =>
-              trackEvent(
-                toolsPageSubmitAnalyticsEvent(),
-                toolsPageSubmitAnalyticsData(COMMERCIAL_TOOLS.length),
-              )
-            }
-            className="inline-flex h-10 items-center rounded-md bg-ink px-4 text-sm font-medium text-background hover:bg-ink/90"
-          >
-            Submit a tool
-          </Link>
-        ) : null}
+        <Link
+          to="/tools/submit"
+          className="inline-flex h-10 items-center rounded-md bg-ink px-4 text-sm font-medium text-background hover:bg-ink/90"
+        >
+          Submit a tool
+        </Link>
       </div>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {COMMERCIAL_TOOLS.map((t, cardIndex) => {
-          const entryDestination = directoryPageEntryDestination("tools", t.slug);
-          return (
-            <article
-              key={t.slug}
-              className="group flex flex-col gap-3 rounded-xl border border-border bg-surface p-5 transition-colors duration-200 ease-out hover:bg-surface-2"
-            >
-              {entryDestination ? (
-                <Link
-                  to={entryDestination.to}
-                  params={entryDestination.params}
-                  onClick={() =>
-                    trackEvent(
-                      toolsDirectoryEntryAnalyticsEvent(),
-                      toolsDirectoryEntryAnalyticsData(t.slug, cardIndex, COMMERCIAL_TOOLS.length),
-                    )
-                  }
-                  className="flex flex-col gap-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <EntryBrandMark entry={t} size="md" className="mt-0.5" />
-                      <div className="min-w-0">
-                        <div className="font-display text-lg font-semibold text-ink">{t.name}</div>
-                        <div className="mt-0.5 text-xs text-ink-muted">
-                          {t.category} · {t.pricingModel}
-                        </div>
-                      </div>
-                    </div>
-                    <DisclosureBadge value={t.disclosure} />
+        {COMMERCIAL_TOOLS.map((t) => (
+          <Link
+            key={t.slug}
+            to="/entry/$category/$slug"
+            params={{ category: "tools", slug: t.slug }}
+            className="group flex flex-col gap-3 rounded-xl border border-border bg-surface p-5 transition-colors duration-200 ease-out hover:bg-surface-2"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 items-start gap-3">
+                <EntryBrandMark entry={t} size="md" className="mt-0.5" />
+                <div className="min-w-0">
+                  <div className="font-display text-lg font-semibold text-ink">{t.name}</div>
+                  <div className="mt-0.5 text-xs text-ink-muted">
+                    {t.category} · {t.pricingModel}
                   </div>
-                  <p className="line-clamp-3 text-sm text-ink-muted">{t.tagline}</p>
-                </Link>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <EntryBrandMark entry={t} size="md" className="mt-0.5" />
-                      <div className="min-w-0">
-                        <div className="font-display text-lg font-semibold text-ink">{t.name}</div>
-                        <div className="mt-0.5 text-xs text-ink-muted">
-                          {t.category} · {t.pricingModel}
-                        </div>
-                      </div>
-                    </div>
-                    <DisclosureBadge value={t.disclosure} />
-                  </div>
-                  <p className="line-clamp-3 text-sm text-ink-muted">{t.tagline}</p>
                 </div>
-              )}
-              <div className="mt-auto flex items-center justify-between text-xs text-ink-muted">
-                <div className="flex flex-wrap gap-1">
-                  {t.tags.slice(0, 3).map((tag) => {
-                    const destination = toolsPageTagDestination(tag);
-                    if (!destination) {
-                      return (
-                        <span
-                          key={tag}
-                          className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px]"
-                        >
-                          {tag}
-                        </span>
-                      );
-                    }
-                    return (
-                      <Link
-                        key={tag}
-                        to={destination.to}
-                        params={destination.params}
-                        onClick={() =>
-                          trackEvent(
-                            toolsPageTagAnalyticsEvent(),
-                            toolsPageTagAnalyticsData(
-                              destination.params.tag,
-                              t.slug,
-                              COMMERCIAL_TOOLS.length,
-                            ),
-                          )
-                        }
-                        className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] hover:border-ink/30 hover:bg-surface-2 hover:text-ink"
-                      >
-                        {tag}
-                      </Link>
-                    );
-                  })}
-                </div>
-                {entryDestination ? (
-                  <Link
-                    to={entryDestination.to}
-                    params={entryDestination.params}
-                    onClick={() =>
-                      trackEvent(
-                        toolsDirectoryEntryAnalyticsEvent(),
-                        toolsDirectoryEntryAnalyticsData(
-                          t.slug,
-                          cardIndex,
-                          COMMERCIAL_TOOLS.length,
-                        ),
-                      )
-                    }
-                    className="inline-flex items-center gap-1 text-ink group-hover:underline"
-                  >
-                    Open <ArrowUpRight className="h-3 w-3" />
-                  </Link>
-                ) : null}
               </div>
-            </article>
-          );
-        })}
+              <DisclosureBadge value={t.disclosure} />
+            </div>
+            <p className="line-clamp-3 text-sm text-ink-muted">{t.tagline}</p>
+            <div className="mt-auto flex items-center justify-between text-xs text-ink-muted">
+              <div className="flex flex-wrap gap-1">
+                {t.tags.slice(0, 3).map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px]"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+              <span className="inline-flex items-center gap-1 text-ink group-hover:underline">
+                Open <ArrowUpRight className="h-3 w-3" />
+              </span>
+            </div>
+          </Link>
+        ))}
       </div>
     </PageContainer>
   );

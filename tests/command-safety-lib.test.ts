@@ -18,11 +18,7 @@ import {
   shellTokenEnd,
   shellToken,
   isEnvironmentAssignment,
-  resolveSegmentCommand,
   segmentLeadCommand,
-  segmentArgTokens,
-  hasRecursiveForceRemove,
-  hasWorldWritableChmod,
   segmentHasDecodeFlag,
   hasPipeToShellInstall,
   hasBase64DecodedShell,
@@ -299,19 +295,6 @@ describe("segmentHasDecodeFlag", () => {
     ).toBe(true);
   });
 
-  it("detects bundled short flags that include decode", () => {
-    for (const line of [
-      "base64 -di payload",
-      "base64 -id payload",
-      "base64 -wd payload",
-      "base64 -diw payload",
-    ]) {
-      expect(segmentHasDecodeFlag(line, lower(line), 0, line.length)).toBe(
-        true,
-      );
-    }
-  });
-
   it("returns false when decode flags are absent", () => {
     const line = "base64 payload";
     expect(segmentHasDecodeFlag(line, lower(line), 0, line.length)).toBe(false);
@@ -321,23 +304,6 @@ describe("segmentHasDecodeFlag", () => {
     expect(
       segmentHasDecodeFlag(otherFlags, lower(otherFlags), 0, otherFlags.length),
     ).toBe(false);
-    const wrapOnly = "base64 -i payload";
-    expect(
-      segmentHasDecodeFlag(wrapOnly, lower(wrapOnly), 0, wrapOnly.length),
-    ).toBe(false);
-  });
-});
-
-describe("hasBase64DecodedShell bundled flags", () => {
-  it("flags a bundled base64 decode piped to a shell", () => {
-    for (const line of [
-      "echo cGF5 | base64 -di | bash",
-      "echo cGF5 | base64 -id | sh",
-    ]) {
-      expect(scanDangerousShellPatterns(line)).toContain(
-        "base64-decoded shell",
-      );
-    }
   });
 });
 
@@ -610,127 +576,6 @@ describe("scanDangerousShellPatterns", () => {
     expect(scanDangerousShellPatterns("eval '$(wget -qO- x)'")).toContain(
       "inline eval of command substitution",
     );
-  });
-});
-
-describe("token-aware rm/chmod flag detection", () => {
-  // Each row: [input, expected]. The scanner flags a recursive-force rm when
-  // BOTH a recursive and a force flag are present, in any spelling/order.
-  const removeCases: Array<[string, boolean]> = [
-    ["rm -rf /", true], // bundled (previously caught)
-    ["rm -fr /tmp", true], // bundled, reversed
-    ["rm -r -f /", true], // split short flags (previously MISSED)
-    ["rm -f -r /", true], // split, reversed
-    ["rm --recursive --force /", true], // long-form (previously MISSED)
-    ["rm -r --force /", true], // mixed short + long
-    ["rm -rfv /", true], // bundled with extra verbose flag
-    ["sudo rm -Rf /", true], // uppercase -R via sudo prefix
-    ["env FOO=1 rm -r -f /", true], // env prefix + split flags
-    // #5585: paren/brace wrap used to resolve the lead command to "" and evade
-    // every detector that depends on resolveSegmentCommand.
-    ["(rm -rf /)", true],
-    ["{rm -rf /}", true],
-    // #5585: sudo after env was missed because stripping was a fixed
-    // sudo-then-env order rather than a loop.
-    ["env FOO=bar sudo rm -rf /", true],
-    ["rm -r /tmp", false], // recursive only, no force — not flagged
-    ["rm --force /tmp", false], // force only, no recursive
-    ["rm file.txt", false], // benign remove
-    ["confirm-rm -rf later", false], // not a bare `rm` command word
-  ];
-
-  it.each(removeCases)("recursive force remove: %s", (input, expected) => {
-    expect(hasRecursiveForceRemove(input, lower(input))).toBe(expected);
-    expect(
-      scanDangerousShellPatterns(input).includes("recursive force remove"),
-    ).toBe(expected);
-  });
-
-  const chmodCases: Array<[string, boolean]> = [
-    ["chmod 777 /app", true], // plain (previously caught)
-    ["chmod 0777 /app", true], // leading zero
-    ["chmod -R 777 /app", true], // bare recursive (previously caught)
-    ["chmod -Rv 777 f", true], // bundled recursive+verbose (previously MISSED)
-    ["chmod -vR 777 f", true], // same, different order (previously MISSED)
-    ["chmod --recursive 777 f", true], // long-form recursive (previously MISSED)
-    ["sudo chmod -R 0777 /data", true], // sudo prefix + recursive
-    ["chmod 755 /app", false], // non-world-writable mode
-    ["chmod +x script.sh", false], // symbolic mode, benign
-    ["echo chmod 777", false], // not a bare `chmod` command word
-  ];
-
-  it.each(chmodCases)("world-writable chmod: %s", (input, expected) => {
-    expect(hasWorldWritableChmod(input, lower(input))).toBe(expected);
-    expect(
-      scanDangerousShellPatterns(input).includes("world-writable chmod"),
-    ).toBe(expected);
-  });
-
-  it("does not cross a command separator when pairing rm flags", () => {
-    // The `-f` belongs to a different command after `;`, so this is not an
-    // `rm -r -f`; pipeChainSegments keeps them apart.
-    expect(
-      hasRecursiveForceRemove("rm -r x; echo -f", "rm -r x; echo -f"),
-    ).toBe(false);
-  });
-
-  it("resolveSegmentCommand and segmentArgTokens expose command + args", () => {
-    const line = "sudo rm -r -f /tmp";
-    const [segment] = pipeChainSegments(line);
-    const { command } = resolveSegmentCommand(
-      line,
-      lower(line),
-      segment.start,
-      segment.end,
-    );
-    expect(command).toBe("rm");
-    expect(
-      segmentArgTokens(line, lower(line), segment.start, segment.end),
-    ).toEqual(["-r", "-f", "/tmp"]);
-    // Back-compat: segmentLeadCommand still returns just the command word.
-    expect(
-      segmentLeadCommand(line, lower(line), segment.start, segment.end),
-    ).toBe("rm");
-  });
-});
-
-describe("resolveSegmentCommand grouping + prefix loop (#5585)", () => {
-  function resolvedCommand(line: string) {
-    const [segment] = pipeChainSegments(line);
-    return resolveSegmentCommand(line, lower(line), segment.start, segment.end)
-      .command;
-  }
-
-  it("resolves paren-wrapped rm to the real command word", () => {
-    expect(resolvedCommand("(rm -rf /)")).toBe("rm");
-    expect(hasRecursiveForceRemove("(rm -rf /)", lower("(rm -rf /)"))).toBe(
-      true,
-    );
-  });
-
-  it("resolves brace-wrapped and spaced subshell forms", () => {
-    expect(resolvedCommand("{rm -rf /}")).toBe("rm");
-    expect(resolvedCommand("( rm -rf / )")).toBe("rm");
-    expect(resolvedCommand("((rm -rf /))")).toBe("rm");
-  });
-
-  it("strips sudo that appears after an env prefix", () => {
-    const line = "env FOO=bar sudo rm -rf /";
-    expect(resolvedCommand(line)).toBe("rm");
-    expect(hasRecursiveForceRemove(line, lower(line))).toBe(true);
-  });
-
-  it("still strips the classic sudo-then-env order", () => {
-    const line = "sudo env FOO=bar rm -rf /";
-    expect(resolvedCommand(line)).toBe("rm");
-    expect(hasRecursiveForceRemove(line, lower(line))).toBe(true);
-  });
-
-  it("strips sudo inside a paren wrap", () => {
-    expect(resolvedCommand("(sudo rm -rf /)")).toBe("rm");
-    expect(
-      hasRecursiveForceRemove("(sudo rm -rf /)", lower("(sudo rm -rf /)")),
-    ).toBe(true);
   });
 });
 

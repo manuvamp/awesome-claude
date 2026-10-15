@@ -5,7 +5,6 @@ import {
   SOURCE_HEALTH_REPORT_SCHEMA_VERSION,
   SOURCE_HEALTH_RISK_CATEGORIES,
   SOURCE_FRESHNESS_THRESHOLDS,
-  SOURCE_PROVENANCE_URL_FIELDS,
   clean,
   clampScore,
   generatedAtForEntries,
@@ -25,7 +24,6 @@ import {
   buildSourceHealthReport,
   buildContentPromptReport,
 } from "../packages/registry/src/quality-lib.js";
-import { ENTRY_SOURCE_URL_FIELDS } from "../packages/mcp/src/search-ranking-lib.js";
 
 const REFERENCE = new Date("2026-06-01T00:00:00.000Z");
 
@@ -140,34 +138,13 @@ describe("buildSourceProvenance", () => {
   it("treats first-party directory urls as non-external", () => {
     const provenance = buildSourceProvenance({
       githubUrl: "https://github.com/JSONbored/awesome-claude/blob/main/x.md",
-      sourceUrl: "https://external.example",
+      websiteUrl: "https://external.example",
     });
     expect(provenance.hasExternalSource).toBe(true);
     expect(provenance.externalSourceUrls).toEqual(["https://external.example"]);
     expect(provenance.sourceUrls).toContain(
       "https://github.com/JSONbored/awesome-claude/blob/main/x.md",
     );
-  });
-
-  it("detects docsUrl and sourceUrl as external provenance", () => {
-    expect(
-      buildSourceProvenance({ docsUrl: "https://docs.example/guide" })
-        .hasExternalSource,
-    ).toBe(true);
-    expect(
-      buildSourceProvenance({ sourceUrl: "https://origin.example/src" })
-        .hasExternalSource,
-    ).toBe(true);
-    expect(
-      buildSourceProvenance({ docsUrl: "https://docs.example/guide" })
-        .sourceUrls,
-    ).toEqual(["https://docs.example/guide"]);
-  });
-
-  it("aligns SOURCE_PROVENANCE_URL_FIELDS with MCP ENTRY_SOURCE_URL_FIELDS", () => {
-    expect([...SOURCE_PROVENANCE_URL_FIELDS]).toEqual([
-      ...ENTRY_SOURCE_URL_FIELDS,
-    ]);
   });
 });
 
@@ -576,25 +553,6 @@ describe("buildEntrySourceHealth", () => {
     expect(health.hasPackageTrust).toBe(true);
     expect(health.needsAttention).toBe(false);
     expect(health.attentionReasons).toEqual([]);
-  });
-
-  it("accepts safetyNotesList/privacyNotesList when string fields are empty (#5638)", () => {
-    const health = buildEntrySourceHealth(
-      entry({
-        category: "mcp",
-        repoUrl: "https://github.com/a/b",
-        dateAdded: "2026-05-01",
-        safetyNotes: [],
-        privacyNotes: [],
-        safetyNotesList: ["review before install"],
-        privacyNotesList: ["no telemetry"],
-      }),
-      REFERENCE,
-    );
-    expect(health.hasSafetyNotes).toBe(true);
-    expect(health.hasPrivacyNotes).toBe(true);
-    expect(health.attentionReasons).not.toContain("missing-safety-notes");
-    expect(health.attentionReasons).not.toContain("missing-privacy-notes");
   });
 
   it("treats stale freshness as an attention reason", () => {

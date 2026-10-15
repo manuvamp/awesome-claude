@@ -11,7 +11,6 @@ import {
 import { logApiWarn } from "@/lib/api-logs";
 import { joinAnalyticsUpstreamUrl, scrubSensitiveAnalyticsBody } from "@/lib/analytics-proxy";
 import { getEnvString } from "@/lib/cloudflare-env.server";
-import { parseAllowedUpstreamOrigins, validateUpstreamOrigin } from "@/lib/upstream-origin-lib";
 
 const BODY_LIMIT_BYTES = 16 * 1024;
 const RATE_LIMIT = {
@@ -28,14 +27,22 @@ function getRequestId(request: Request) {
 }
 
 function allowedUpstreamOrigins() {
-  return parseAllowedUpstreamOrigins(
-    getEnvString("UMAMI_ALLOWED_UPSTREAM_ORIGINS"),
-    DEFAULT_ALLOWED_UPSTREAM_ORIGINS,
-  );
+  const configured = getEnvString("UMAMI_ALLOWED_UPSTREAM_ORIGINS");
+  return configured
+    ? configured
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean)
+    : [...DEFAULT_ALLOWED_UPSTREAM_ORIGINS];
 }
 
 function validatedUpstreamOrigin(upstream: string) {
-  return validateUpstreamOrigin(upstream, allowedUpstreamOrigins());
+  try {
+    const origin = new URL(upstream).origin;
+    return allowedUpstreamOrigins().includes(origin) ? origin : "";
+  } catch {
+    return "";
+  }
 }
 
 /**

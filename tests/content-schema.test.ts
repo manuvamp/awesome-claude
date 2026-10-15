@@ -279,50 +279,6 @@ describe("inferStructuredFields", () => {
     );
   });
 
-  it("accepts valid brandColors that repeat or exceed six entries", () => {
-    const base = {
-      title: "T",
-      slug: "t",
-      description: "d",
-      cardDescription: "c",
-    };
-    const brandColorError = "brandColors must be hex colors such as #796eff";
-
-    // Duplicates and >6 valid colors are normalized downstream, not invalid.
-    const duplicate = validateEntry("agents", {
-      ...base,
-      brandColors: ["#796eff", "#796eff"],
-    });
-    expect(duplicate.semanticErrors).not.toContain(brandColorError);
-
-    const overSix = validateEntry("agents", {
-      ...base,
-      brandColors: [
-        "#111111",
-        "#222222",
-        "#333333",
-        "#444444",
-        "#555555",
-        "#666666",
-        "#777777",
-      ],
-    });
-    expect(overSix.semanticErrors).not.toContain(brandColorError);
-
-    const commaString = validateEntry("agents", {
-      ...base,
-      brandColors: "#796eff,#123456",
-    });
-    expect(commaString.semanticErrors).not.toContain(brandColorError);
-
-    // A genuinely invalid color is still rejected.
-    const invalid = validateEntry("agents", {
-      ...base,
-      brandColors: ["#796eff", "not-a-color"],
-    });
-    expect(invalid.semanticErrors).toContain(brandColorError);
-  });
-
   it("does not recommend package fields for non-installable skills", () => {
     const result = validateEntry("skills", {
       slug: "copy-only-capability-pack",
@@ -342,25 +298,6 @@ describe("inferStructuredFields", () => {
 
     expect(result.missingRecommended).not.toContain("installCommand");
     expect(result.missingRecommended).not.toContain("downloadUrl");
-  });
-
-  it("rejects http and https URLs with embedded userinfo", () => {
-    const result = validateEntry("mcp", {
-      slug: "userinfo-urls",
-      title: "Userinfo URLs",
-      description: "Reject credential-bearing profile and repo URLs.",
-      author: "JSONbored",
-      dateAdded: "2026-01-01",
-      authorProfileUrl: "https://token@github.com/victim",
-      repoUrl: "http://user:pass@example.com/repo",
-    });
-
-    expect(result.semanticErrors).toEqual(
-      expect.arrayContaining([
-        "authorProfileUrl must use http or https",
-        "repoUrl must use http or https",
-      ]),
-    );
   });
 
   it("orders frontmatter while dropping empty values and appending unknown keys", () => {

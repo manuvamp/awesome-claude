@@ -6,20 +6,6 @@ import { useRecents } from "@/lib/recents";
 import { SavedSearchManager } from "@/components/saved-search-manager";
 import { EmptyState } from "@/components/empty-state";
 import { unsubscribeFromNewsletter } from "@/lib/api/newsletter";
-import { trackEvent } from "@/lib/analytics";
-import {
-  subscriptionsPageConfirmAnalyticsData,
-  subscriptionsPageConfirmAnalyticsEvent,
-  subscriptionsPageEgressAnalyticsData,
-  subscriptionsPageEgressAnalyticsEvent,
-  subscriptionsPageEgressDestination,
-  subscriptionsPageManageAlertsAnalyticsData,
-  subscriptionsPageManageAlertsAnalyticsEvent,
-  subscriptionsPageRemoveIntentAnalyticsData,
-  subscriptionsPageRemoveIntentAnalyticsEvent,
-  subscriptionsPageRenameAnalyticsData,
-  subscriptionsPageRenameAnalyticsEvent,
-} from "@/lib/subscriptions-page-cta-events";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -108,18 +94,10 @@ function SubscriptionsPage() {
 
   const removeFollow = (id: string) => {
     const f = recents.follows.find((x) => x.id === id);
-    trackEvent(
-      subscriptionsPageRemoveIntentAnalyticsEvent(),
-      subscriptionsPageRemoveIntentAnalyticsData("follow", followCount),
-    );
     setConfirm({ kind: "follow", id, label: f?.label ?? "this stream" });
   };
   const removeSegment = (id: string) => {
     const s = recents.segments.find((x) => x.id === id);
-    trackEvent(
-      subscriptionsPageRemoveIntentAnalyticsEvent(),
-      subscriptionsPageRemoveIntentAnalyticsData("segment", segmentCount),
-    );
     setConfirm({ kind: "segment", id, label: s?.label ?? "this segment", email: s?.email });
   };
 
@@ -169,48 +147,18 @@ function SubscriptionsPage() {
                 body="Follow categories or changelog streams to get email or RSS alerts when they update."
                 action={
                   <div className="flex gap-2">
-                    {(
-                      [
-                        {
-                          destination: "feeds" as const,
-                          label: (
-                            <>
-                              <Rss className="h-3.5 w-3.5" /> Browse feeds
-                            </>
-                          ),
-                          className:
-                            "inline-flex h-8 items-center gap-1.5 rounded-md bg-ink px-3 text-xs font-medium text-background hover:bg-ink/90",
-                        },
-                        {
-                          destination: "browse" as const,
-                          label: (
-                            <>
-                              <Compass className="h-3.5 w-3.5" /> Browse directory
-                            </>
-                          ),
-                          className:
-                            "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-2",
-                        },
-                      ] as const
-                    ).map((item) => {
-                      const destination = subscriptionsPageEgressDestination(item.destination);
-                      if (!destination) return null;
-                      return (
-                        <Link
-                          key={item.destination}
-                          to={destination.to}
-                          className={item.className}
-                          onClick={() =>
-                            trackEvent(
-                              subscriptionsPageEgressAnalyticsEvent(),
-                              subscriptionsPageEgressAnalyticsData(item.destination),
-                            )
-                          }
-                        >
-                          {item.label}
-                        </Link>
-                      );
-                    })}
+                    <Link
+                      to="/feeds"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md bg-ink px-3 text-xs font-medium text-background hover:bg-ink/90"
+                    >
+                      <Rss className="h-3.5 w-3.5" /> Browse feeds
+                    </Link>
+                    <Link
+                      to="/browse"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-2"
+                    >
+                      <Compass className="h-3.5 w-3.5" /> Browse directory
+                    </Link>
                   </div>
                 }
                 className="border-0 bg-transparent p-4"
@@ -231,10 +179,6 @@ function SubscriptionsPage() {
                           onChange={(e) => setRenameDraft(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
-                              trackEvent(
-                                subscriptionsPageRenameAnalyticsEvent(),
-                                subscriptionsPageRenameAnalyticsData("save", followCount),
-                              );
                               recents.renameFollow(f.id, renameDraft);
                               setRenameId(null);
                             } else if (e.key === "Escape") setRenameId(null);
@@ -254,10 +198,6 @@ function SubscriptionsPage() {
                         type="button"
                         aria-label="Save"
                         onClick={() => {
-                          trackEvent(
-                            subscriptionsPageRenameAnalyticsEvent(),
-                            subscriptionsPageRenameAnalyticsData("save", followCount),
-                          );
                           recents.renameFollow(f.id, renameDraft);
                           setRenameId(null);
                         }}
@@ -270,10 +210,6 @@ function SubscriptionsPage() {
                         type="button"
                         aria-label="Rename"
                         onClick={() => {
-                          trackEvent(
-                            subscriptionsPageRenameAnalyticsEvent(),
-                            subscriptionsPageRenameAnalyticsData("start", followCount),
-                          );
                           setRenameId(f.id);
                           setRenameDraft(f.label);
                         }}
@@ -341,13 +277,7 @@ function SubscriptionsPage() {
           <h2 className="font-display text-base font-semibold text-ink">Saved-search alerts</h2>
           <button
             type="button"
-            onClick={() => {
-              trackEvent(
-                subscriptionsPageManageAlertsAnalyticsEvent(),
-                subscriptionsPageManageAlertsAnalyticsData(alertCount, recents.saved.length),
-              );
-              setManagerOpen(true);
-            }}
+            onClick={() => setManagerOpen(true)}
             className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-xs text-ink hover:bg-surface-2"
           >
             <Pencil className="h-3.5 w-3.5" /> Manage
@@ -397,10 +327,6 @@ function SubscriptionsPage() {
             <AlertDialogAction
               onClick={() => {
                 if (!confirm) return;
-                trackEvent(
-                  subscriptionsPageConfirmAnalyticsEvent(),
-                  subscriptionsPageConfirmAnalyticsData(confirm.kind),
-                );
                 if (confirm.kind === "follow") void doRemoveFollow(confirm.id);
                 else void doRemoveSegment(confirm.id);
                 setConfirm(null);

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { BEST_LISTS, ENTRIES, REGISTRY_ENTRIES } from "@/data/entries";
+import { BEST_LISTS, ENTRIES } from "@/data/entries";
 import { CONTRIBUTORS } from "@/data/contributors";
 import { INTEGRATIONS } from "@/data/integrations";
 import atlasRegistry from "@/generated/atlas-registry.json";
@@ -8,19 +8,31 @@ import { siteConfig } from "@/lib/site";
 import { applySecurityHeaders } from "@/lib/security-headers";
 import { CATEGORIES, PLATFORM_LABEL } from "@/types/registry";
 import { getIndexableTagGroups } from "@/lib/tags";
-import { isSitemapIndexableEntry, sitemapEntryLastModified } from "@/lib/sitemap-policy";
+import { isSitemapIndexableEntry } from "@/lib/sitemap-policy";
 import { COMPARISONS } from "@/data/comparisons";
 import { REPORT_PATHS } from "@/lib/data-reports";
-import { sitemapUrlItem } from "@/lib/sitemap-url-item-lib";
+
+function escapeXml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
 
 function urlItem(pathname: string, priority: string, changefreq = "weekly", lastmodInput?: string) {
-  return sitemapUrlItem({
-    siteUrl: siteConfig.url,
-    pathname,
-    priority,
-    changefreq,
-    lastmod: lastmodInput || atlasRegistry.generatedAt,
-  });
+  const lastmod = String(lastmodInput || atlasRegistry.generatedAt || "").slice(0, 10);
+  return [
+    "  <url>",
+    `    <loc>${escapeXml(`${siteConfig.url}${pathname}`)}</loc>`,
+    lastmod ? `    <lastmod>${escapeXml(lastmod)}</lastmod>` : "",
+    `    <changefreq>${changefreq}</changefreq>`,
+    `    <priority>${priority}</priority>`,
+    "  </url>",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 async function renderSitemap() {
@@ -82,25 +94,12 @@ async function renderSitemap() {
   // One pass over ENTRIES building a `${category}/${platform}` -> count map (was platforms ×
   // categories × ENTRIES.filter ≈ 83K iterations per request).
   const intersectionCounts = new Map<string, number>();
-  // Total entries per platform, reusing the same pass — the platform hub route
-  // (for.$platform.tsx) noindexes hubs with fewer than 2 entries, so the sitemap
-  // must not advertise them, mirroring how getIndexableTagGroups() filters tags.
-  const platformCounts = new Map<string, number>();
   for (const entry of ENTRIES) {
     for (const platform of entry.platforms ?? []) {
       const key = `${entry.category}/${platform}`;
       intersectionCounts.set(key, (intersectionCounts.get(key) ?? 0) + 1);
-      platformCounts.set(platform, (platformCounts.get(platform) ?? 0) + 1);
     }
   }
-  // Entry `lastmod` comes from sitemapEntryLastModified, whose
-  // contentUpdatedAt/repoUpdatedAt signals only exist on the raw registry
-  // snapshot — buildEntry() drops them from the client `Entry` shape — so look
-  // the raw sibling up by `category/slug` (the same keying data/entries.ts
-  // uses for ENTRY_BY_REF).
-  const rawEntryByRef = new Map(
-    REGISTRY_ENTRIES.map((entry) => [`${entry.category}/${entry.slug}`, entry] as const),
-  );
   const intersectionPaths: string[] = [];
   for (const platform of Object.keys(PLATFORM_LABEL)) {
     for (const category of CATEGORIES) {
@@ -127,26 +126,18 @@ async function renderSitemap() {
       urlItem(`/${category.id}`, "0.8", "weekly", categoryLastmod.get(category.id)),
     ),
     ...getIndexableTagGroups().map((group) => urlItem(`/tags/${group.slug}`, "0.5")),
-    // Platform hubs with >=2 entries only — thinner ones are noindexed by the route.
-    ...Object.keys(PLATFORM_LABEL)
-      .filter((platform) => (platformCounts.get(platform) ?? 0) >= 2)
-      .map((platform) => urlItem(`/for/${platform}`, "0.6")),
+    ...Object.keys(PLATFORM_LABEL).map((platform) => urlItem(`/for/${platform}`, "0.6")),
     ...intersectionPaths.map((pathname) => urlItem(pathname, "0.55")),
     ...COMPARISONS.map((comparison) => urlItem(`/compare/${comparison.slug}`, "0.6")),
     ...bestPaths.map((pathname) => urlItem(pathname, "0.75")),
     // Advertise every indexable entry page (all categories, including `tools`).
     // Entries opt out per-entry with `robotsIndex:false` (see isSitemapIndexableEntry).
-    // `lastmod` uses the content-update-aware sitemapEntryLastModified helper
-    // (contentUpdatedAt || repoUpdatedAt || verifiedAt || dateAdded) on the raw
-    // registry entry instead of the weaker inline reviewedAt-based fallback.
     ...ENTRIES.filter(isSitemapIndexableEntry).map((entry) =>
       urlItem(
         `/entry/${entry.category}/${entry.slug}`,
         "0.8",
         "monthly",
-        sitemapEntryLastModified(
-          rawEntryByRef.get(`${entry.category}/${entry.slug}`) ?? entry,
-        )?.toISOString(),
+        entry.reviewedAt ?? entry.dateAdded,
       ),
     ),
     ...contributorPaths.map((pathname) => urlItem(pathname, "0.5", "monthly")),

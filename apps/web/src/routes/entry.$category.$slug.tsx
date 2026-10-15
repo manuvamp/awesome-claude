@@ -2,10 +2,14 @@ import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-route
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import {
+  ArrowUpRight,
+  BookOpen,
   ExternalLink,
+  GitBranch,
   ShieldCheck,
   AlertTriangle,
   ListChecks,
+  Code2,
   Sparkles,
   Star,
   FileText,
@@ -19,7 +23,7 @@ import {
 } from "lucide-react";
 import { getEntry, related, relatedGroups, relatedGuides } from "@/data/search";
 import { getEntryRedirectTarget } from "@/lib/entry-redirects";
-import { BEST_LISTS, ENTRIES, REGISTRY_ENTRIES } from "@/data/entries";
+import { BEST_LISTS, ENTRIES } from "@/data/entries";
 import { COMPARISONS } from "@/data/comparisons";
 import { EntryAuthorAttribution } from "@/components/contributor-attribution";
 import { findContributorForIdentity } from "@/data/contributors";
@@ -35,146 +39,47 @@ import { WatchButton } from "@/components/watch-button";
 import { CopyButton } from "@/components/copy-button";
 import { ResourceCard } from "@/components/resource-card";
 import { ComparisonTable } from "@/components/comparison-table";
-import { compareEntryInteractiveUiState } from "@/lib/compare-entry-interactive-ui-lib";
+import {
+  compareBestListInteractiveLinkLabel,
+  compareBestListInteractiveSearch,
+} from "@/lib/compare-best-summary";
+import {
+  compareDossierBannerTexts,
+  compareDossierInteractiveSearch,
+} from "@/lib/compare-dossier-summary";
+import { compareInteractiveLinkLabel } from "@/lib/compare-interactive-link";
+import {
+  compareFeaturedInteractiveLinkLabel,
+  compareFeaturedInteractiveSearch,
+  resolveComparisonRefs,
+} from "@/lib/compare-featured-link";
 import { buildEntryJsonLd } from "@heyclaude/registry";
 import { stringifyJsonLd } from "@/lib/json-ld";
-import { entryBreadcrumbJsonLd } from "@/lib/entry-breadcrumb-jsonld-lib";
-import { entryWebPageDateModified, entryWebPageJsonLd } from "@/lib/entry-webpage-jsonld-lib";
-import { hasSchemaDetails } from "@/lib/entry-schema-details-lib";
-import { booleanLabel } from "@/lib/boolean-label-lib";
 import { absoluteUrl, clampDescription } from "@/lib/seo";
 import { categoryLabels, categoryUsageHints, siteConfig } from "@/lib/site";
 import { tagSlug } from "@/lib/tags";
 // (HoverChevrons removed — related uses static grid)
 import { ShareMenu } from "@/components/share-menu";
-import type { TocItem } from "@/components/dossier-toc";
-import { EntryDetailRail } from "@/components/entry-detail-rail";
+import { DossierTOC, type TocItem } from "@/components/dossier-toc";
 import { EntryFacets } from "@/components/entry-facets";
 import { HarnessBadge } from "@/components/harness-badge";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { NewsletterInline } from "@/components/newsletter-inline";
 import { SourceCitations } from "@/components/source-citations";
 import { CitationFacts } from "@/components/citation-facts";
+import { ProvenanceBlock } from "@/components/provenance-block";
 import { StickyMetaBar } from "@/components/sticky-meta-bar";
-import { EntryDetailCommandCenter } from "@/components/entry-detail-command-center";
-import { EntryDetailMobileActionBar } from "@/components/entry-detail-mobile-action-bar";
 import { EntrySignalsPanel } from "@/components/entry-signals-panel";
-import { EntryDetailDecisionPlaybook } from "@/components/entry-detail-decision-playbook";
-import { EntryDecisionTimelinePanel } from "@/components/entry-decision-timeline-panel";
 import { EntryBrandMark } from "@/components/entry-brand-mark";
-import { EntryAdoptionPlanPanel } from "@/components/entry-adoption-plan-panel";
-import { EntryEvidenceReadinessMatrix } from "@/components/entry-evidence-readiness-matrix";
-import { EntryCompareBenchmarkPanel } from "@/components/entry-compare-benchmark-panel";
-import { EntryPrerequisiteReadinessPanel } from "@/components/entry-prerequisite-readiness-panel";
-import { EntrySafetySurfacePanel } from "@/components/entry-safety-surface-panel";
-import { EntrySetupSnapshotPanel } from "@/components/entry-setup-snapshot-panel";
-import { PLATFORM_SUPPORT_LABEL, type Entry } from "@/types/registry";
-import {
-  buildEntryTocItems,
-  entryQuickLinks,
-  entryReadinessRows,
-} from "@/lib/entry-detail-sidebar-lib";
+import { TRUST_LABEL, PLATFORM_SUPPORT_LABEL, type Entry } from "@/types/registry";
 import { installRiskLevel, INSTALL_RISK_LABEL, INSTALL_RISK_DETAIL } from "@/lib/trust";
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { toast } from "sonner";
+import { useEffect, useMemo, useState } from "react";
 import { useRecents } from "@/lib/recents";
-import { useCompare, useIsCompared } from "@/lib/compare";
-import { serializeCompareItems } from "@/lib/compare-selection";
-import { trackEvent, outboundHost } from "@/lib/analytics";
-import {
-  badgeChromeCategoryAnalyticsData,
-  badgeChromeCategoryAnalyticsEvent,
-  badgeChromeInstallRiskAnalyticsData,
-  badgeChromeInstallRiskAnalyticsEvent,
-  badgeChromeNotesAnalyticsData,
-  badgeChromeNotesAnalyticsEvent,
-  badgeChromeSourceAnalyticsData,
-  badgeChromeSourceAnalyticsEvent,
-} from "@/lib/badge-chrome-cta-events";
-import {
-  DOSSIER_TOC_CONTENT_OUTLINE_SURFACE,
-  dossierTocSectionAnalyticsData,
-  dossierTocSectionAnalyticsEvent,
-} from "@/lib/dossier-toc-cta-events";
-import {
-  entryDetailCategoryHubAnalyticsData,
-  entryDetailCategoryHubAnalyticsEvent,
-  entryDetailCategoryHubDestination,
-  entryDetailTagAnalyticsData,
-  entryDetailTagAnalyticsEvent,
-  entryDetailTagSelectDestination,
-} from "@/lib/entry-detail-tag-cta-events";
-import {
-  ENTRY_DETAIL_DECISION_PLAYBOOK_SURFACE,
-  entryDetailCompareAnalyticsData,
-  entryDetailCompareAnalyticsEvent,
-  entryDetailCompareFullAnalyticsData,
-  entryDetailCompareFullAnalyticsEvent,
-  entryDetailCompareOpenTrayAnalyticsData,
-  entryDetailCompareOpenTrayAnalyticsEvent,
-  entryDetailCompareToastOpenAnalyticsData,
-  entryDetailCompareToastOpenAnalyticsEvent,
-  entryDetailCopyTabSelectAnalyticsData,
-  entryDetailCopyTabSelectAnalyticsEvent,
-  entryDetailMobileCompareAnalyticsData,
-  entryDetailMobileCompareAnalyticsEvent,
-  entryDetailMobileCompareToastOpenAnalyticsData,
-  entryDetailMobileCompareToastOpenAnalyticsEvent,
-  entryDetailPlaybookActionAnalyticsData,
-  entryDetailPlaybookActionAnalyticsEvent,
-  entryDetailCitationPlainTextAnalyticsData,
-  entryDetailCitationPlainTextAnalyticsEvent,
-  entryDetailCodeDisclosureAnalyticsData,
-  entryDetailCodeDisclosureAnalyticsEvent,
-  entryDetailSchemaLinkAnalyticsData,
-  entryDetailSchemaLinkAnalyticsEvent,
-  type EntryDetailCodeDisclosureKind,
-} from "@/lib/entry-detail-cta-events";
-import {
-  detailDecisionPresetAnalyticsData,
-  detailDecisionPresetAnalyticsEvent,
-} from "@/lib/entry-detail-decision-preset-cta-events";
-import {
-  entryDetailBadgeCopyAnalyticsData,
-  entryDetailBadgeCopyAnalyticsEvent,
-  entryDetailBadgePreviewAnalyticsData,
-  entryDetailBadgePreviewAnalyticsEvent,
-} from "@/lib/entry-detail-badge-cta-events";
-import {
-  ENTRY_DETAIL_COMPARE_EGRESS_SURFACE_COMPARE,
-  ENTRY_DETAIL_COMPARE_EGRESS_SURFACE_FEATURED,
-  entryDetailCompareEgressAnalyticsData,
-  entryDetailCompareEgressAnalyticsEvent,
-  entryDetailCompareEgressDestination,
-  type EntryDetailCompareEgressLinkKind,
-  type EntryDetailCompareEgressSurface,
-} from "@/lib/entry-detail-compare-egress-cta-events";
-import {
-  entryDetailCollectionEntryAnalyticsData,
-  entryDetailCollectionEntryAnalyticsEvent,
-  entryDetailCollectionEntryDestination,
-} from "@/lib/entry-detail-collection-cta-events";
-import { resourceCardCompareFullMessage } from "@/lib/resource-card-compare-ui";
 import { useCopyPref, useHarnessPref, type CopyVariant } from "@/lib/dossier-prefs";
 import { variantsForEntry } from "@/components/copy-segmented";
+import { HarnessVariantPicker } from "@/components/harness-variant-picker";
 import type { Harness } from "@/types/registry";
 import { cn } from "@/lib/utils";
-import { entryAdoptionPlanState, type AdoptionPlanPresetId } from "@/lib/entry-adoption-plan";
-import { entryPrerequisiteReadinessState } from "@/lib/entry-prerequisite-readiness";
-import { entrySafetySurfaceState } from "@/lib/entry-safety-surface";
-import { entryDetailDecisionPlaybookState } from "@/lib/entry-detail-decision-playbook";
-import {
-  entryEvidenceReadinessMatrixState,
-  type EvidenceMatrixPresetId,
-} from "@/lib/entry-evidence-readiness-matrix";
-import {
-  entryDecisionTimelineState,
-  type DecisionTimelinePresetId,
-} from "@/lib/entry-decision-timeline";
-import {
-  entryCompareBenchmarkState,
-  type CompareBenchmarkPresetId,
-} from "@/lib/entry-compare-benchmark";
 
 const loadFullEntry = createServerFn({ method: "GET" })
   .inputValidator(z.object({ category: z.string().min(1), slug: z.string().min(1) }))
@@ -234,21 +139,32 @@ export const Route = createFileRoute("/entry/$category/$slug")({
     const e = loaderData.entry;
     const path = `/entry/${params.category}/${params.slug}`;
     const url = absoluteUrl(path);
-    // contentUpdatedAt/repoUpdatedAt live on the raw registry snapshot only
-    // (buildEntry drops them); look up the sibling the way sitemap.xml does
-    // so WebPage dateModified matches sitemap lastmod (#5675).
-    const raw = REGISTRY_ENTRIES.find(
-      (entry) => entry.category === e.category && entry.slug === e.slug,
-    );
-    const freshEntry = {
-      ...e,
-      contentUpdatedAt: raw?.contentUpdatedAt,
-      repoUpdatedAt: raw?.repoUpdatedAt,
-      verifiedAt: raw?.verifiedAt,
+    const ld = {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      name: e.title,
+      description: e.description,
+      url,
+      datePublished: e.dateAdded,
+      dateModified: e.reviewedAt ?? e.dateAdded,
+      about: e.category,
+      author: { "@type": "Person", name: e.author },
+      ...(e.sourceUrl ? { isBasedOn: e.sourceUrl } : {}),
     };
-    const ld = entryWebPageJsonLd(freshEntry, url);
-    const modifiedTime = entryWebPageDateModified(freshEntry);
-    const breadcrumbs = entryBreadcrumbJsonLd(e, url, absoluteUrl);
+    const breadcrumbs = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Directory", item: absoluteUrl("/browse") },
+        {
+          "@type": "ListItem",
+          position: 2,
+          name: e.category,
+          item: absoluteUrl(`/${e.category}`),
+        },
+        { "@type": "ListItem", position: 3, name: e.title, item: url },
+      ],
+    };
     const ogUrl = absoluteUrl(`/og/${params.category}/${params.slug}`);
     const ogTitle = `${e.title} — HeyClaude`;
     const metaDescription = clampDescription(e.seoDescription ?? e.description);
@@ -256,12 +172,6 @@ export const Route = createFileRoute("/entry/$category/$slug")({
       meta: [
         { title: e.seoTitle ? `${e.seoTitle} — HeyClaude` : ogTitle },
         { name: "description", content: metaDescription },
-        // robotsIndex:false entries are already dropped from the sitemap
-        // (isSitemapIndexableEntry); emit the matching noindex on the detail
-        // page itself so the opt-out also holds for crawlers arriving via
-        // internal links or backlinks — same pattern as the thin-content
-        // guards in tags.$tag.tsx and for.$platform.$category.tsx.
-        ...(e.robotsIndex === false ? [{ name: "robots", content: "noindex, follow" }] : []),
         { property: "og:title", content: ogTitle },
         { property: "og:description", content: metaDescription },
         { property: "og:url", content: url },
@@ -271,7 +181,7 @@ export const Route = createFileRoute("/entry/$category/$slug")({
         { property: "og:image:width", content: "1200" },
         { property: "og:image:height", content: "630" },
         { property: "article:published_time", content: e.dateAdded },
-        { property: "article:modified_time", content: modifiedTime },
+        { property: "article:modified_time", content: e.reviewedAt ?? e.dateAdded },
         ...(e.author ? [{ property: "article:author", content: e.author }] : []),
         { property: "article:section", content: e.category },
         ...(e.tags ?? []).map((tag) => ({ property: "article:tag", content: tag })),
@@ -325,17 +235,13 @@ function Dossier() {
     const pool = altGroup && altGroup.entries.length > 0 ? altGroup.entries : rel;
     return pool.slice(0, 3);
   }, [relGroups, rel]);
-  const entryRef = `${entry.category}/${entry.slug}`;
-  const comparedIn = COMPARISONS.filter((c) => c.refs.includes(entryRef));
-  const featuredIn = BEST_LISTS.filter((l) => l.picks.some((p) => p.ref === entryRef));
-  const {
-    dossierUi: dossierCompareUi,
-    featuredUi,
-    hasFeaturedLinks,
-    showDossierCompareSection,
-  } = useMemo(
-    () => compareEntryInteractiveUiState(entry, alternatives, comparedIn, featuredIn, ENTRIES),
-    [entry, alternatives, comparedIn, featuredIn],
+  const compareBannerTexts = useMemo(
+    () => compareDossierBannerTexts(entry, alternatives),
+    [entry, alternatives],
+  );
+  const dossierCompareSearch = useMemo(
+    () => compareDossierInteractiveSearch(entry, alternatives),
+    [entry, alternatives],
   );
   // Deterministic "how do I use this" next-step links — guides sharing a tag,
   // minus any guide already shown in the related grid (no duplicate links).
@@ -347,6 +253,30 @@ function Dossier() {
     );
     return relatedGuides(entry).filter((g) => !shown.has(`${g.category}/${g.slug}`));
   }, [entry, relGroups, rel]);
+  const entryRef = `${entry.category}/${entry.slug}`;
+  const comparedIn = COMPARISONS.filter((c) => c.refs.includes(entryRef));
+  const featuredIn = BEST_LISTS.filter((l) => l.picks.some((p) => p.ref === entryRef));
+  const featuredCompareLinks = useMemo(
+    () =>
+      comparedIn.map((comparison) => {
+        const resolved = resolveComparisonRefs(comparison.refs, ENTRIES);
+        return {
+          slug: comparison.slug,
+          search: compareFeaturedInteractiveSearch(comparison.refs, ENTRIES),
+          label: compareFeaturedInteractiveLinkLabel(resolved.length),
+        };
+      }),
+    [comparedIn],
+  );
+  const featuredBestListLinks = useMemo(
+    () =>
+      featuredIn.map((list) => ({
+        slug: list.slug,
+        search: compareBestListInteractiveSearch(list.picks, ENTRIES),
+        label: compareBestListInteractiveLinkLabel(list.picks, ENTRIES),
+      })),
+    [featuredIn],
+  );
   const recents = useRecents();
   useEffect(() => {
     recents.pushEntry({ category: entry.category, slug: entry.slug, title: entry.title });
@@ -362,289 +292,41 @@ function Dossier() {
   const [pref, setPref] = useCopyPref();
   const variantHas = (v: CopyVariant) => !!liveVariants.find((x) => x.id === v)?.value;
   const tab: CopyVariant = pref && variantHas(pref) ? pref : firstAvailable;
-  const onTabChange = useCallback(
-    (v: CopyVariant) => {
-      if (v === tab) return;
-      trackEvent(
-        entryDetailCopyTabSelectAnalyticsEvent(),
-        entryDetailCopyTabSelectAnalyticsData(entry.category, entry.slug, v),
-      );
-      setPref(v);
-    },
-    [entry.category, entry.slug, setPref, tab],
-  );
+  const setTab = (v: CopyVariant) => setPref(v);
 
   const tabPayload = liveVariants.find((v) => v.id === tab)?.value;
-
-  const compare = useCompare();
-  const [adoptionPreset, setAdoptionPreset] = useState<AdoptionPlanPresetId>("balanced-rollout");
-  const [evidencePreset, setEvidencePreset] = useState<EvidenceMatrixPresetId>("balanced");
-  const [timelinePreset, setTimelinePreset] = useState<DecisionTimelinePresetId>("balanced");
-  const [benchmarkPreset, setBenchmarkPreset] = useState<CompareBenchmarkPresetId>("balanced");
-  const inCompare = useIsCompared(entry);
-  const onToggleCompare = useCallback(() => {
-    const wasIn = inCompare;
-    const changed = compare.toggle(entry);
-    if (!changed) {
-      toast.error(resourceCardCompareFullMessage());
-      return;
-    }
-    trackEvent(entryDetailCompareAnalyticsEvent(!wasIn), {
-      ...entryDetailCompareAnalyticsData(entry.category, entry.slug),
-      compareCount: wasIn ? Math.max(0, compare.items.length - 1) : compare.items.length + 1,
-    });
-    if (wasIn) {
-      toast(`Removed “${entry.title}” from compare`);
-    } else {
-      const compareCount = compare.items.length + 1;
-      toast.success("Added to compare", {
-        action: {
-          label: "View",
-          onClick: () => {
-            compare.setOpen(true);
-            trackEvent(
-              entryDetailCompareToastOpenAnalyticsEvent(),
-              entryDetailCompareToastOpenAnalyticsData(entry.category, entry.slug, compareCount),
-            );
-          },
-        },
-      });
-    }
-  }, [compare, entry, inCompare]);
-  const onMobileToggleCompare = useCallback(() => {
-    const wasIn = inCompare;
-    const changed = compare.toggle(entry);
-    if (!changed) {
-      toast.error(resourceCardCompareFullMessage());
-      return;
-    }
-    trackEvent(entryDetailMobileCompareAnalyticsEvent(!wasIn), {
-      ...entryDetailMobileCompareAnalyticsData(
-        entry.category,
-        entry.slug,
-        wasIn ? Math.max(0, compare.items.length - 1) : compare.items.length + 1,
-      ),
-    });
-    if (wasIn) {
-      toast(`Removed “${entry.title}” from compare`);
-    } else {
-      const compareCount = compare.items.length + 1;
-      toast.success("Added to compare", {
-        action: {
-          label: "View",
-          onClick: () => {
-            compare.setOpen(true);
-            trackEvent(
-              entryDetailMobileCompareToastOpenAnalyticsEvent(),
-              entryDetailMobileCompareToastOpenAnalyticsData(
-                entry.category,
-                entry.slug,
-                compareCount,
-              ),
-            );
-          },
-        },
-      });
-    }
-  }, [compare, entry, inCompare]);
-  const onOpenCompare = useCallback(() => {
-    compare.setOpen(true);
-    trackEvent(
-      entryDetailCompareOpenTrayAnalyticsEvent(),
-      entryDetailCompareOpenTrayAnalyticsData(entry.category, entry.slug, compare.items.length),
-    );
-  }, [compare, entry.category, entry.slug]);
-
-  const onOpenFullCompare = useCallback(() => {
-    trackEvent(entryDetailCompareFullAnalyticsEvent(), {
-      ...entryDetailCompareFullAnalyticsData(entry.category, entry.slug, compare.items.length),
-    });
-  }, [compare.items.length, entry.category, entry.slug]);
-
-  const trackCompareEgress = useCallback(
-    (
-      surface: EntryDetailCompareEgressSurface,
-      linkKind: EntryDetailCompareEgressLinkKind,
-      refCount: number,
-      hasInteractive: boolean,
-    ) => {
-      trackEvent(
-        entryDetailCompareEgressAnalyticsEvent(),
-        entryDetailCompareEgressAnalyticsData(
-          entry.category,
-          entry.slug,
-          surface,
-          linkKind,
-          refCount,
-          hasInteractive,
-        ),
-      );
-    },
-    [entry.category, entry.slug],
-  );
-
-  const compareIds = useMemo(() => serializeCompareItems(compare.items), [compare.items]);
-  const onPlaybookAction = useCallback(
-    (actionId: string, meta?: { adding?: boolean }) => {
-      trackEvent(entryDetailPlaybookActionAnalyticsEvent(actionId), {
-        ...entryDetailPlaybookActionAnalyticsData(
-          entry.category,
-          entry.slug,
-          actionId,
-          compare.items.length,
-          meta?.adding,
-        ),
-      });
-    },
-    [compare.items.length, entry.category, entry.slug],
-  );
-  const onPlaybookToggleCompare = useCallback((): boolean | undefined => {
-    const wasIn = inCompare;
-    const changed = compare.toggle(entry);
-    if (!changed) {
-      toast.error(resourceCardCompareFullMessage());
-      return undefined;
-    }
-    const adding = !wasIn;
-    const compareCount = wasIn ? Math.max(0, compare.items.length - 1) : compare.items.length + 1;
-    trackEvent(entryDetailCompareAnalyticsEvent(adding), {
-      ...entryDetailCompareAnalyticsData(
-        entry.category,
-        entry.slug,
-        ENTRY_DETAIL_DECISION_PLAYBOOK_SURFACE,
-      ),
-      compareCount,
-    });
-    if (wasIn) {
-      toast(`Removed “${entry.title}” from compare`);
-    } else {
-      toast.success("Added to compare", {
-        action: {
-          label: "View",
-          onClick: () => {
-            compare.setOpen(true);
-            trackEvent(
-              entryDetailCompareToastOpenAnalyticsEvent(),
-              entryDetailCompareToastOpenAnalyticsData(
-                entry.category,
-                entry.slug,
-                compareCount,
-                ENTRY_DETAIL_DECISION_PLAYBOOK_SURFACE,
-              ),
-            );
-          },
-        },
-      });
-    }
-    return adding;
-  }, [compare, entry, inCompare]);
-  const onPlaybookOpenCompareTray = useCallback(() => {
-    compare.setOpen(true);
-    trackEvent(
-      entryDetailCompareOpenTrayAnalyticsEvent(),
-      entryDetailCompareOpenTrayAnalyticsData(
-        entry.category,
-        entry.slug,
-        compare.items.length,
-        ENTRY_DETAIL_DECISION_PLAYBOOK_SURFACE,
-      ),
-    );
-  }, [compare, entry.category, entry.slug]);
-  const onAdoptionPresetSelect = useCallback(
-    (preset: AdoptionPlanPresetId) => {
-      if (preset === adoptionPreset) return;
-      trackEvent(
-        detailDecisionPresetAnalyticsEvent(),
-        detailDecisionPresetAnalyticsData(entry.category, entry.slug, "adoption-plan", preset),
-      );
-      setAdoptionPreset(preset);
-    },
-    [adoptionPreset, entry.category, entry.slug],
-  );
-  const onEvidencePresetSelect = useCallback(
-    (preset: EvidenceMatrixPresetId) => {
-      if (preset === evidencePreset) return;
-      trackEvent(
-        detailDecisionPresetAnalyticsEvent(),
-        detailDecisionPresetAnalyticsData(entry.category, entry.slug, "evidence-matrix", preset),
-      );
-      setEvidencePreset(preset);
-    },
-    [entry.category, entry.slug, evidencePreset],
-  );
-  const onTimelinePresetSelect = useCallback(
-    (preset: DecisionTimelinePresetId) => {
-      if (preset === timelinePreset) return;
-      trackEvent(
-        detailDecisionPresetAnalyticsEvent(),
-        detailDecisionPresetAnalyticsData(entry.category, entry.slug, "decision-timeline", preset),
-      );
-      setTimelinePreset(preset);
-    },
-    [entry.category, entry.slug, timelinePreset],
-  );
-  const onBenchmarkPresetSelect = useCallback(
-    (preset: CompareBenchmarkPresetId) => {
-      if (preset === benchmarkPreset) return;
-      trackEvent(
-        detailDecisionPresetAnalyticsEvent(),
-        detailDecisionPresetAnalyticsData(entry.category, entry.slug, "compare-benchmark", preset),
-      );
-      setBenchmarkPreset(preset);
-    },
-    [benchmarkPreset, entry.category, entry.slug],
-  );
 
   const risk = installRiskLevel(entry);
   const hasSchema = hasSchemaDetails(entry);
 
-  const tocItems = useMemo<TocItem[]>(
-    () =>
-      buildEntryTocItems({
-        risk,
-        hasSafetyNotes: Boolean(entry.safetyNotes),
-        hasPrivacyNotes: Boolean(entry.privacyNotes),
-        hasPrerequisites: Boolean(entry.prerequisites?.length),
-        hasSchema,
-        hasAlternatives: alternatives.length > 0,
-        hasRelated: rel.length > 0,
-        hasGuides: guides.length > 0,
-      }),
-    [
-      risk,
-      entry.safetyNotes,
-      entry.privacyNotes,
-      entry.prerequisites,
-      hasSchema,
-      alternatives.length,
-      rel.length,
-      guides.length,
-    ],
-  );
-  const quickLinks = useMemo(() => entryQuickLinks(entry), [entry]);
-  const readinessRows = useMemo(() => entryReadinessRows(entry), [entry]);
-  const prerequisiteReadiness = useMemo(() => entryPrerequisiteReadinessState(entry), [entry]);
-  const safetySurface = useMemo(() => entrySafetySurfaceState(entry), [entry]);
-  const adoptionPlan = useMemo(
-    () => entryAdoptionPlanState(entry, adoptionPreset, compare.items),
-    [entry, adoptionPreset, compare.items],
-  );
-  const decisionPlaybook = useMemo(
-    () => entryDetailDecisionPlaybookState(entry, compare.items),
-    [entry, compare.items],
-  );
-  const evidenceMatrix = useMemo(
-    () => entryEvidenceReadinessMatrixState(entry, evidencePreset, compare.items),
-    [entry, evidencePreset, compare.items],
-  );
-  const decisionTimeline = useMemo(
-    () => entryDecisionTimelineState(entry, timelinePreset, compare.items),
-    [entry, timelinePreset, compare.items],
-  );
-  const compareBenchmark = useMemo(
-    () => entryCompareBenchmarkState(entry, benchmarkPreset, compare.items),
-    [entry, benchmarkPreset, compare.items],
-  );
+  const tocItems = useMemo<TocItem[]>(() => {
+    const items: TocItem[] = [];
+    if (risk !== "low") items.push({ id: "risk-callout", label: "Install risk" });
+    items.push({ id: "citation-facts", label: "Citation facts" });
+    if (entry.safetyNotes) items.push({ id: "safety", label: "Safety notes" });
+    if (entry.privacyNotes) items.push({ id: "privacy", label: "Privacy notes" });
+    if (entry.prerequisites && entry.prerequisites.length > 0)
+      items.push({ id: "prerequisites", label: "Prerequisites" });
+    if (hasSchema) items.push({ id: "schema", label: "Schema details" });
+    items.push({ id: "about", label: "About this resource" });
+    items.push({ id: "citations", label: "Source citations" });
+    items.push({ id: "badge", label: "Add a badge" });
+    if (alternatives.length > 0) items.push({ id: "compare", label: "How it compares" });
+    if (rel.length > 0) items.push({ id: "related", label: "Related" });
+    if (guides.length > 0) items.push({ id: "guides", label: "Related guides" });
+    items.push({ id: "signals", label: "Signals" });
+    return items;
+  }, [
+    risk,
+    entry.safetyNotes,
+    entry.privacyNotes,
+    entry.prerequisites,
+    hasSchema,
+    alternatives.length,
+    rel.length,
+    guides.length,
+  ]);
+
   const entryUrl = `/entry/${entry.category}/${entry.slug}`;
 
   return (
@@ -667,50 +349,11 @@ function Dossier() {
       <header className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 border-b border-border pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <CategoryPill
-              asLink
-              category={entry.category}
-              onNavigate={() =>
-                trackEvent(
-                  badgeChromeCategoryAnalyticsEvent(),
-                  badgeChromeCategoryAnalyticsData(entry.category, "detail-header"),
-                )
-              }
-            >
-              {entry.category}
-            </CategoryPill>
-            <TrustDrilldown entry={entry} surface="detail-header" />
-            <SourceBadge
-              status={entry.source}
-              asLink
-              onNavigate={() =>
-                trackEvent(
-                  badgeChromeSourceAnalyticsEvent(),
-                  badgeChromeSourceAnalyticsData(entry.source, "detail-header"),
-                )
-              }
-            />
-            <InstallRiskBadge
-              entry={entry}
-              asButton
-              onActivate={(risk) =>
-                trackEvent(
-                  badgeChromeInstallRiskAnalyticsEvent(),
-                  badgeChromeInstallRiskAnalyticsData(risk, "detail-header"),
-                )
-              }
-            />
-            <NotesPresenceChips
-              entry={entry}
-              className="ml-1"
-              interactive
-              onNoteClick={(noteKind, present) =>
-                trackEvent(
-                  badgeChromeNotesAnalyticsEvent(),
-                  badgeChromeNotesAnalyticsData(noteKind, present, "detail-header"),
-                )
-              }
-            />
+            <CategoryPill>{entry.category}</CategoryPill>
+            <TrustDrilldown entry={entry} />
+            <SourceBadge status={entry.source} />
+            <InstallRiskBadge entry={entry} />
+            <NotesPresenceChips entry={entry} className="ml-1" />
             {entry.claimed && (
               <span className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-ink-muted">
                 <Sparkles className="h-3 w-3" />
@@ -723,7 +366,6 @@ function Dossier() {
               label={entry.title}
               href={`/entry/${entry.category}/${entry.slug}`}
               size="sm"
-              analyticsEntry={{ category: entry.category, slug: entry.slug }}
             />
             <ShareMenu
               url={entryUrl}
@@ -731,7 +373,6 @@ function Dossier() {
               description={entry.description}
               ogUrl={`/og/${entry.category}/${entry.slug}`}
               llmsUrl={`/api/registry/entries/${entry.category}/${entry.slug}/llms`}
-              analyticsEntry={{ category: entry.category, slug: entry.slug }}
             />
           </div>
 
@@ -758,7 +399,7 @@ function Dossier() {
             <span>·</span>
             <div className="flex flex-wrap gap-1">
               {entry.platforms.map((p) => (
-                <PlatformChip key={p} id={p} asLink surface="detail-header" />
+                <PlatformChip key={p} id={p} asLink />
               ))}
             </div>
           </div>
@@ -766,34 +407,136 @@ function Dossier() {
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <span className="eyebrow mr-1">Harness</span>
               {entry.harness.map((h) => (
-                <HarnessBadge key={h} id={h} asLink surface="detail-header" />
+                <HarnessBadge key={h} id={h} />
               ))}
             </div>
           )}
           <EntryFacets entry={entry} density="card" className="mt-3" />
         </div>
 
-        <EntryDetailCommandCenter
-          entry={entry}
-          risk={risk}
-          harnessAvailable={harnessAvailable}
-          harness={harness as Harness | null}
-          onHarnessChange={(h) => setHarness(h)}
-          liveVariants={liveVariants}
-          tab={tab}
-          onTabChange={onTabChange}
-          tabPayload={tabPayload}
-          relatedCount={rel.length}
-          guideCount={guides.length}
-          compareCta={{
-            inCompare,
-            compareCount: compare.items.length,
-            compareIds,
-            onToggle: onToggleCompare,
-            onOpenCompare,
-            onOpenFullCompare,
-          }}
-        />
+        {/* Sticky install panel */}
+        <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
+          <div className="overflow-hidden rounded-xl border border-border bg-surface">
+            <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+              <div className="eyebrow">Install</div>
+              {entry.sourceUrl && (
+                <a
+                  href={entry.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink"
+                >
+                  Source <ArrowUpRight className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+            {harnessAvailable.length >= 2 && (
+              <div className="border-b border-border px-3 py-2">
+                <div className="mb-1.5 text-[10px] uppercase tracking-wider text-ink-subtle">
+                  Harness variant
+                </div>
+                <HarnessVariantPicker
+                  available={harnessAvailable}
+                  value={harness as Harness | null}
+                  onChange={setHarness}
+                />
+              </div>
+            )}
+            <div className="flex gap-1 border-b border-border px-3 pt-2">
+              {(["install", "config", "full"] as const).map((t) => {
+                const payload = liveVariants.find((v) => v.id === t)?.value;
+                if (!payload) return null;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setTab(t)}
+                    aria-pressed={tab === t}
+                    className={cn(
+                      "rounded-t-md px-2.5 py-1.5 text-xs font-medium capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+                      tab === t ? "bg-background text-ink" : "text-ink-muted hover:text-ink",
+                    )}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="bg-background p-3">
+              {tabPayload ? (
+                <>
+                  <pre className="max-h-64 overflow-auto rounded-md bg-surface-2 p-3 font-mono text-[12px] leading-relaxed text-ink">
+                    <code>{tabPayload}</code>
+                  </pre>
+                  <div className="mt-3 flex items-center gap-2">
+                    <CopyButton
+                      value={tabPayload}
+                      label={`Copy ${tab}`}
+                      size="md"
+                      className="flex-1 justify-center"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-md bg-surface-2 p-4 text-xs text-ink-muted">
+                  No installable payload for this tab.
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-border px-4 py-3">
+              <div className="eyebrow mb-2">Readiness</div>
+              <ul className="space-y-1.5 text-xs">
+                <Readiness
+                  label="Trust"
+                  value={TRUST_LABEL[entry.trust]}
+                  ok={entry.trust === "trusted"}
+                />
+                <Readiness label="Source" value={entry.source} ok={entry.source !== "unverified"} />
+                <Readiness
+                  label="Safety notes"
+                  value={entry.safetyNotes ? "Present" : "Missing"}
+                  ok={!!entry.safetyNotes}
+                />
+                <Readiness
+                  label="Reviewed"
+                  value={entry.reviewed ? "Yes" : "No"}
+                  ok={!!entry.reviewed}
+                />
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-1.5 text-xs">
+            {entry.docsUrl && (
+              <a
+                href={entry.docsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-ink-muted hover:text-ink"
+              >
+                <BookOpen className="h-3.5 w-3.5" /> Documentation{" "}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            {entry.sourceUrl && (
+              <a
+                href={entry.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-ink-muted hover:text-ink"
+              >
+                <GitBranch className="h-3.5 w-3.5" /> Source repository{" "}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            <Link
+              to="/browse"
+              className="inline-flex items-center gap-1.5 text-ink-muted hover:text-ink"
+            >
+              <Code2 className="h-3.5 w-3.5" /> Registry JSON · LLM text
+            </Link>
+          </div>
+        </aside>
       </header>
       <div id="dossier-header-sentinel" aria-hidden className="h-px w-full" />
 
@@ -830,12 +573,6 @@ function Dossier() {
               also available as{" "}
               <a
                 href={`/api/registry/entries/${entry.category}/${entry.slug}/llms`}
-                onClick={() =>
-                  trackEvent(
-                    entryDetailCitationPlainTextAnalyticsEvent(),
-                    entryDetailCitationPlainTextAnalyticsData(entry.category, entry.slug),
-                  )
-                }
                 className="text-ink underline-offset-2 hover:underline"
               >
                 plain text
@@ -844,50 +581,6 @@ function Dossier() {
             </p>
             <CitationFacts entry={entry} />
           </DossierSection>
-          <EntryDetailDecisionPlaybook
-            state={decisionPlaybook}
-            compareIds={compareIds}
-            onToggleCompare={onPlaybookToggleCompare}
-            onOpenCompareTray={onPlaybookOpenCompareTray}
-            onAction={onPlaybookAction}
-          />
-          <EntrySetupSnapshotPanel entry={entry} />
-          <EntryAdoptionPlanPanel
-            state={adoptionPlan}
-            selectedPreset={adoptionPreset}
-            onSelectPreset={onAdoptionPresetSelect}
-          />
-          <EntryEvidenceReadinessMatrix
-            state={evidenceMatrix}
-            category={entry.category}
-            slug={entry.slug}
-            selectedPreset={evidencePreset}
-            onSelectPreset={onEvidencePresetSelect}
-          />
-          <EntryDecisionTimelinePanel
-            state={decisionTimeline}
-            category={entry.category}
-            slug={entry.slug}
-            selectedPreset={timelinePreset}
-            onSelectPreset={onTimelinePresetSelect}
-          />
-          <EntryCompareBenchmarkPanel
-            state={compareBenchmark}
-            category={entry.category}
-            slug={entry.slug}
-            selectedPreset={benchmarkPreset}
-            onSelectPreset={onBenchmarkPresetSelect}
-          />
-          <EntryPrerequisiteReadinessPanel
-            state={prerequisiteReadiness}
-            category={entry.category}
-            slug={entry.slug}
-          />
-          <EntrySafetySurfacePanel
-            state={safetySurface}
-            category={entry.category}
-            slug={entry.slug}
-          />
           {entry.safetyNotes && (
             <DossierSection id="safety" icon={ShieldCheck} title="Safety notes" tone="trust">
               <NoteList value={entry.safetyNotesList ?? [entry.safetyNotes]} />
@@ -950,21 +643,7 @@ function Dossier() {
                 <ul className="grid gap-1 text-xs text-ink-muted sm:grid-cols-2">
                   {entry.headings.slice(0, 16).map((heading) => (
                     <li key={heading.id}>
-                      <a
-                        href={`#${heading.id}`}
-                        className="hover:text-ink"
-                        onClick={() =>
-                          trackEvent(
-                            dossierTocSectionAnalyticsEvent(),
-                            dossierTocSectionAnalyticsData(
-                              entry.category,
-                              entry.slug,
-                              heading.id,
-                              DOSSIER_TOC_CONTENT_OUTLINE_SURFACE,
-                            ),
-                          )
-                        }
-                      >
+                      <a href={`#${heading.id}`} className="hover:text-ink">
                         {heading.text}
                       </a>
                     </li>
@@ -973,7 +652,7 @@ function Dossier() {
               </div>
             )}
             <div className="mt-4 flex flex-wrap gap-1.5">
-              {entry.tags.map((t, rowIndex) => {
+              {entry.tags.map((t) => {
                 const slug = tagSlug(t);
                 const base =
                   "inline-flex rounded-md border border-border bg-surface px-2 py-0.5 text-xs text-ink-muted";
@@ -985,31 +664,11 @@ function Dossier() {
                     </span>
                   );
                 }
-                const destination = entryDetailTagSelectDestination(slug);
-                if (!destination) {
-                  return (
-                    <span key={t} className={base}>
-                      #{t}
-                    </span>
-                  );
-                }
                 return (
                   <Link
                     key={t}
-                    to={destination.to}
-                    params={destination.params}
-                    onClick={() =>
-                      trackEvent(
-                        entryDetailTagAnalyticsEvent(),
-                        entryDetailTagAnalyticsData(
-                          entry.category,
-                          entry.slug,
-                          slug,
-                          rowIndex,
-                          entry.tags.length,
-                        ),
-                      )
-                    }
+                    to="/tags/$tag"
+                    params={{ tag: slug }}
                     className={`${base} hover:border-border-strong hover:text-ink`}
                   >
                     #{t}
@@ -1030,7 +689,7 @@ function Dossier() {
 
           <BadgeSection category={entry.category} slug={entry.slug} title={entry.title} />
 
-          {showDossierCompareSection && (
+          {alternatives.length > 0 && (
             <DossierSection id="compare" title="How it compares">
               <p className="mb-4 text-sm text-ink-muted">
                 {entry.title} side by side with{" "}
@@ -1040,9 +699,9 @@ function Dossier() {
                 on trust, install, platform support, and disclosed safety notes — all from reviewed
                 registry metadata.
               </p>
-              {dossierCompareUi.bannerTexts.length > 0 ? (
+              {compareBannerTexts.length > 0 ? (
                 <div className="mb-4 space-y-1.5">
-                  {dossierCompareUi.bannerTexts.map((text) => (
+                  {compareBannerTexts.map((text) => (
                     <p key={text} className="text-sm text-ink-muted">
                       {text}
                     </p>
@@ -1050,33 +709,16 @@ function Dossier() {
                 </div>
               ) : null}
               <ComparisonTable entries={[entry, ...alternatives]} showNextActions />
-              {dossierCompareUi.interactiveSearch
-                ? (() => {
-                    const destination = entryDetailCompareEgressDestination(
-                      "dossier-interactive",
-                      dossierCompareUi.interactiveSearch.ids,
-                    );
-                    if (!destination || !("search" in destination)) return null;
-                    return (
-                      <Link
-                        to={destination.to}
-                        search={destination.search}
-                        className="mt-4 inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink"
-                        onClick={() =>
-                          trackCompareEgress(
-                            ENTRY_DETAIL_COMPARE_EGRESS_SURFACE_COMPARE,
-                            "dossier-interactive",
-                            alternatives.length + 1,
-                            true,
-                          )
-                        }
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                        {dossierCompareUi.interactiveLinkLabel}
-                      </Link>
-                    );
-                  })()
-                : null}
+              {dossierCompareSearch ? (
+                <Link
+                  to="/compare"
+                  search={dossierCompareSearch}
+                  className="mt-4 inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  {compareInteractiveLinkLabel(alternatives.length + 1)}
+                </Link>
+              ) : null}
             </DossierSection>
           )}
 
@@ -1089,12 +731,7 @@ function Dossier() {
                       <div className="eyebrow mb-2">{RELATION_LABELS[g.relation] ?? "Related"}</div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         {g.entries.map((e) => (
-                          <ResourceCard
-                            key={`${e.category}/${e.slug}`}
-                            entry={e}
-                            variant="grid"
-                            analyticsSurface="detail-related"
-                          />
+                          <ResourceCard key={`${e.category}/${e.slug}`} entry={e} variant="grid" />
                         ))}
                       </div>
                     </div>
@@ -1103,35 +740,18 @@ function Dossier() {
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                   {rel.slice(0, 4).map((e) => (
-                    <ResourceCard
-                      key={`${e.category}/${e.slug}`}
-                      entry={e}
-                      variant="grid"
-                      analyticsSurface="detail-related"
-                    />
+                    <ResourceCard key={`${e.category}/${e.slug}`} entry={e} variant="grid" />
                   ))}
                 </div>
               )}
               <div className="mt-3 text-right">
-                {(() => {
-                  const destination = entryDetailCategoryHubDestination(entry.category);
-                  if (!destination) return null;
-                  return (
-                    <Link
-                      to={destination.to}
-                      params={destination.params}
-                      onClick={() =>
-                        trackEvent(
-                          entryDetailCategoryHubAnalyticsEvent(),
-                          entryDetailCategoryHubAnalyticsData(entry.category, entry.slug),
-                        )
-                      }
-                      className="story-link text-xs font-medium text-ink"
-                    >
-                      More in {categoryLabels[entry.category] ?? entry.category} →
-                    </Link>
-                  );
-                })()}
+                <Link
+                  to="/$category"
+                  params={{ category: entry.category }}
+                  className="story-link text-xs font-medium text-ink"
+                >
+                  More in {categoryLabels[entry.category] ?? entry.category} →
+                </Link>
               </div>
             </DossierSection>
           )}
@@ -1143,122 +763,62 @@ function Dossier() {
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {guides.map((g) => (
-                  <ResourceCard
-                    key={`${g.category}/${g.slug}`}
-                    entry={g}
-                    variant="grid"
-                    analyticsSurface="detail-guides"
-                  />
+                  <ResourceCard key={`${g.category}/${g.slug}`} entry={g} variant="grid" />
                 ))}
               </div>
             </DossierSection>
           )}
 
-          {hasFeaturedLinks && (
+          {(featuredIn.length > 0 || comparedIn.length > 0) && (
             <DossierSection id="featured-in" title="Featured in">
               <ul className="flex flex-col gap-2 text-sm">
                 {featuredIn.map((l) => {
-                  const bestListLink = featuredUi.bestListLinks.find(
-                    (link) => link.slug === l.slug,
-                  );
-                  const listDestination = entryDetailCompareEgressDestination("best-list", l.slug);
-                  const interactiveDestination =
-                    bestListLink?.search &&
-                    entryDetailCompareEgressDestination(
-                      "best-list-interactive",
-                      bestListLink.search.ids,
-                    );
-                  if (!listDestination || !("params" in listDestination)) return null;
+                  const bestListLink = featuredBestListLinks.find((link) => link.slug === l.slug);
                   return (
                     <li
                       key={`best-${l.slug}`}
                       className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
                     >
                       <Link
-                        to={listDestination.to}
-                        params={listDestination.params}
+                        to="/best/$slug"
+                        params={{ slug: l.slug }}
                         className="story-link text-ink"
-                        onClick={() =>
-                          trackCompareEgress(
-                            ENTRY_DETAIL_COMPARE_EGRESS_SURFACE_FEATURED,
-                            "best-list",
-                            l.picks.length,
-                            Boolean(bestListLink?.search),
-                          )
-                        }
                       >
                         Best list: {l.title}
                       </Link>
-                      {interactiveDestination && "search" in interactiveDestination ? (
+                      {bestListLink?.search ? (
                         <Link
-                          to={interactiveDestination.to}
-                          search={interactiveDestination.search}
+                          to="/compare"
+                          search={bestListLink.search}
                           className="text-xs text-ink-muted hover:text-ink"
-                          onClick={() =>
-                            trackCompareEgress(
-                              ENTRY_DETAIL_COMPARE_EGRESS_SURFACE_FEATURED,
-                              "best-list-interactive",
-                              l.picks.length,
-                              true,
-                            )
-                          }
                         >
-                          {bestListLink?.label}
+                          {bestListLink.label}
                         </Link>
                       ) : null}
                     </li>
                   );
                 })}
                 {comparedIn.map((c) => {
-                  const featuredLink = featuredUi.comparisonLinks.find(
-                    (link) => link.slug === c.slug,
-                  );
-                  const pageDestination = entryDetailCompareEgressDestination(
-                    "comparison-page",
-                    c.slug,
-                  );
-                  const interactiveDestination =
-                    featuredLink?.search &&
-                    entryDetailCompareEgressDestination(
-                      "comparison-interactive",
-                      featuredLink.search.ids,
-                    );
-                  if (!pageDestination || !("params" in pageDestination)) return null;
+                  const featuredLink = featuredCompareLinks.find((link) => link.slug === c.slug);
                   return (
                     <li
                       key={`cmp-${c.slug}`}
                       className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
                     >
                       <Link
-                        to={pageDestination.to}
-                        params={pageDestination.params}
+                        to="/compare/$slug"
+                        params={{ slug: c.slug }}
                         className="story-link text-ink"
-                        onClick={() =>
-                          trackCompareEgress(
-                            ENTRY_DETAIL_COMPARE_EGRESS_SURFACE_FEATURED,
-                            "comparison-page",
-                            c.refs.length,
-                            Boolean(featuredLink?.search),
-                          )
-                        }
                       >
                         Comparison: {c.title}
                       </Link>
-                      {interactiveDestination && "search" in interactiveDestination ? (
+                      {featuredLink?.search ? (
                         <Link
-                          to={interactiveDestination.to}
-                          search={interactiveDestination.search}
+                          to="/compare"
+                          search={featuredLink.search}
                           className="text-xs text-ink-muted hover:text-ink"
-                          onClick={() =>
-                            trackCompareEgress(
-                              ENTRY_DETAIL_COMPARE_EGRESS_SURFACE_FEATURED,
-                              "comparison-interactive",
-                              c.refs.length,
-                              true,
-                            )
-                          }
                         >
-                          {featuredLink?.label}
+                          {featuredLink.label}
                         </Link>
                       ) : null}
                     </li>
@@ -1280,23 +840,18 @@ function Dossier() {
           />
         </div>
 
-        <EntryDetailRail
-          entry={entry}
-          tocItems={tocItems}
-          quickLinks={quickLinks}
-          readinessRows={readinessRows}
-        />
+        <aside className="space-y-6">
+          <div className="hidden lg:block lg:sticky lg:top-20">
+            <DossierTOC items={tocItems} />
+          </div>
+          <ProvenanceBlock entry={entry} />
+          <div className="rounded-xl border border-border bg-surface p-4 text-xs text-ink-muted">
+            HeyClaude reviews metadata, provenance, and surface-level safety. We don't scan for
+            malware. Always read the source before installing tools that touch your filesystem,
+            network, or credentials.
+          </div>
+        </aside>
       </div>
-      <EntryDetailMobileActionBar
-        entry={entry}
-        copyPayload={tabPayload}
-        compareCta={{
-          inCompare,
-          compareCount: compare.items.length,
-          onToggle: onMobileToggleCompare,
-        }}
-      />
-      <div className="h-14 lg:hidden" aria-hidden />
     </div>
   );
 }
@@ -1320,17 +875,7 @@ function BadgeSection({
         Markdown into your README — it renders the badge and links back to this page.
       </p>
       <div className="mt-3 flex items-center gap-3">
-        <a
-          href={entryUrl}
-          target="_blank"
-          rel="noreferrer"
-          onClick={() =>
-            trackEvent(
-              entryDetailBadgePreviewAnalyticsEvent(),
-              entryDetailBadgePreviewAnalyticsData(category, slug),
-            )
-          }
-        >
+        <a href={entryUrl} target="_blank" rel="noreferrer">
           <img src={badgeUrl} alt="Listed on HeyClaude" height={20} className="h-5 w-auto" />
         </a>
       </div>
@@ -1344,11 +889,42 @@ function BadgeSection({
           iconOnly
           size="md"
           toastLabel="Badge Markdown copied"
-          event={entryDetailBadgeCopyAnalyticsEvent()}
-          eventData={entryDetailBadgeCopyAnalyticsData(category, slug)}
         />
       </div>
     </DossierSection>
+  );
+}
+
+function hasSchemaDetails(entry: Entry) {
+  return Boolean(
+    entry.skillType ||
+    entry.skillLevel ||
+    entry.verificationStatus ||
+    entry.verifiedAt ||
+    entry.retrievalSources?.length ||
+    entry.testedPlatforms?.length ||
+    entry.platformCompatibility?.length ||
+    entry.trigger ||
+    entry.commandSyntax ||
+    entry.argumentHint ||
+    entry.allowedTools?.length ||
+    entry.scriptLanguage ||
+    entry.scriptBody ||
+    entry.items?.length ||
+    entry.installationOrder?.length ||
+    entry.estimatedSetupTime ||
+    entry.difficulty ||
+    entry.websiteUrl ||
+    entry.pricingModel ||
+    entry.disclosure ||
+    entry.applicationCategory ||
+    entry.operatingSystem ||
+    entry.repoStats ||
+    entry.downloadUrl ||
+    entry.packageVerified !== undefined ||
+    entry.downloadSha256 ||
+    entry.copySnippet ||
+    entry.fullCopy,
   );
 }
 
@@ -1395,22 +971,7 @@ function SchemaDetails({ entry }: { entry: Entry }) {
         {(entry.downloadUrl || entry.packageVerified !== undefined || entry.downloadSha256) && (
           <MetadataGroup title="Package metadata" icon={Package}>
             <FieldGrid>
-              <FieldRow
-                label="Download URL"
-                value={entry.downloadUrl}
-                href={entry.downloadUrl}
-                onLinkClick={() =>
-                  trackEvent(
-                    entryDetailSchemaLinkAnalyticsEvent(),
-                    entryDetailSchemaLinkAnalyticsData(
-                      entry.category,
-                      entry.slug,
-                      "download",
-                      outboundHost(entry.downloadUrl!),
-                    ),
-                  )
-                }
-              />
+              <FieldRow label="Download URL" value={entry.downloadUrl} href={entry.downloadUrl} />
               <FieldRow label="Package verified" value={booleanLabel(entry.packageVerified)} />
               <FieldRow label="SHA-256" value={entry.downloadSha256} mono />
             </FieldGrid>
@@ -1476,13 +1037,7 @@ function SchemaDetails({ entry }: { entry: Entry }) {
               <FieldRow label="Script language" value={entry.scriptLanguage} />
             </FieldGrid>
             <PillList label="Allowed tools" values={entry.allowedTools} />
-            <CodeDisclosure
-              label="Script body"
-              value={entry.scriptBody}
-              category={entry.category}
-              slug={entry.slug}
-              kind="script-body"
-            />
+            <CodeDisclosure label="Script body" value={entry.scriptBody} />
           </MetadataGroup>
         )}
 
@@ -1499,11 +1054,7 @@ function SchemaDetails({ entry }: { entry: Entry }) {
               <FieldRow label="Estimated setup" value={entry.estimatedSetupTime} />
               <FieldRow label="Difficulty" value={entry.difficulty} />
             </FieldGrid>
-            <CollectionItemList
-              values={entry.items}
-              fromCategory={entry.category}
-              fromSlug={entry.slug}
-            />
+            <CollectionItemList values={entry.items} />
             <PillList label="Installation order" values={entry.installationOrder} />
           </MetadataGroup>
         )}
@@ -1515,22 +1066,7 @@ function SchemaDetails({ entry }: { entry: Entry }) {
           entry.operatingSystem) && (
           <MetadataGroup title="Tool listing metadata" icon={Globe2}>
             <FieldGrid>
-              <FieldRow
-                label="Website"
-                value={entry.websiteUrl}
-                href={entry.websiteUrl}
-                onLinkClick={() =>
-                  trackEvent(
-                    entryDetailSchemaLinkAnalyticsEvent(),
-                    entryDetailSchemaLinkAnalyticsData(
-                      entry.category,
-                      entry.slug,
-                      "website",
-                      outboundHost(entry.websiteUrl!),
-                    ),
-                  )
-                }
-              />
+              <FieldRow label="Website" value={entry.websiteUrl} href={entry.websiteUrl} />
               <FieldRow label="Pricing" value={entry.pricingModel} />
               <FieldRow label="Disclosure" value={entry.disclosure} />
               <FieldRow label="Application category" value={entry.applicationCategory} />
@@ -1539,16 +1075,15 @@ function SchemaDetails({ entry }: { entry: Entry }) {
           </MetadataGroup>
         )}
 
-        <CodeDisclosure
-          label="Full copyable content"
-          value={entry.fullCopy ?? entry.copySnippet}
-          category={entry.category}
-          slug={entry.slug}
-          kind="full-copy"
-        />
+        <CodeDisclosure label="Full copyable content" value={entry.fullCopy ?? entry.copySnippet} />
       </div>
     </DossierSection>
   );
+}
+
+function booleanLabel(value?: boolean) {
+  if (value === undefined) return undefined;
+  return value ? "Yes" : "No";
 }
 
 function MetadataGroup({
@@ -1580,13 +1115,11 @@ function FieldRow({
   value,
   href,
   mono,
-  onLinkClick,
 }: {
   label: string;
   value?: string;
   href?: string;
   mono?: boolean;
-  onLinkClick?: () => void;
 }) {
   if (!value) return null;
   return (
@@ -1594,13 +1127,7 @@ function FieldRow({
       <dt className="text-[10px] uppercase tracking-wider text-ink-subtle">{label}</dt>
       <dd className={cn("mt-0.5 break-words text-sm text-ink", mono && "font-mono text-xs")}>
         {href ? (
-          <a
-            href={href}
-            target="_blank"
-            rel="noreferrer"
-            className="hover:underline"
-            onClick={onLinkClick}
-          >
+          <a href={href} target="_blank" rel="noreferrer" className="hover:underline">
             {value}
           </a>
         ) : (
@@ -1630,15 +1157,7 @@ function PillList({ label, values }: { label: string; values?: string[] }) {
   );
 }
 
-function CollectionItemList({
-  values,
-  fromCategory,
-  fromSlug,
-}: {
-  values?: string[];
-  fromCategory: string;
-  fromSlug: string;
-}) {
+function CollectionItemList({ values }: { values?: string[] }) {
   if (!values?.length) return null;
   return (
     <div className="mt-3">
@@ -1646,37 +1165,14 @@ function CollectionItemList({
         Included entries
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {values.map((value, itemIndex) => {
+        {values.map((value) => {
           const [category, slug] = value.split("/");
           if (category && slug) {
-            const destination = entryDetailCollectionEntryDestination(category, slug);
-            if (!destination) {
-              return (
-                <span
-                  key={value}
-                  className="inline-flex rounded-md border border-border bg-surface px-2 py-0.5 font-mono text-xs text-ink-muted"
-                >
-                  {value}
-                </span>
-              );
-            }
             return (
               <Link
                 key={value}
-                to={destination.to}
-                params={destination.params}
-                onClick={() =>
-                  trackEvent(
-                    entryDetailCollectionEntryAnalyticsEvent(),
-                    entryDetailCollectionEntryAnalyticsData(
-                      fromCategory,
-                      fromSlug,
-                      value,
-                      itemIndex,
-                      values.length,
-                    ),
-                  )
-                }
+                to="/entry/$category/$slug"
+                params={{ category, slug }}
                 className="inline-flex rounded-md border border-border bg-surface px-2 py-0.5 font-mono text-xs text-ink-muted hover:text-ink"
               >
                 {value}
@@ -1697,31 +1193,10 @@ function CollectionItemList({
   );
 }
 
-function CodeDisclosure({
-  label,
-  value,
-  category,
-  slug,
-  kind,
-}: {
-  label: string;
-  value?: string;
-  category: string;
-  slug: string;
-  kind: EntryDetailCodeDisclosureKind;
-}) {
+function CodeDisclosure({ label, value }: { label: string; value?: string }) {
   if (!value) return null;
   return (
-    <details
-      className="mt-3 rounded-lg border border-border bg-background"
-      onToggle={(e) => {
-        const open = (e.currentTarget as HTMLDetailsElement).open;
-        trackEvent(
-          entryDetailCodeDisclosureAnalyticsEvent(),
-          entryDetailCodeDisclosureAnalyticsData(category, slug, kind, open),
-        );
-      }}
-    >
+    <details className="mt-3 rounded-lg border border-border bg-background">
       <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-ink">{label}</summary>
       <pre className="max-h-96 overflow-auto border-t border-border p-3 font-mono text-[12px] leading-relaxed text-ink">
         <code>{value}</code>
@@ -1774,5 +1249,18 @@ function DossierSection({
       </div>
       <div className="prose-editorial text-sm">{children}</div>
     </section>
+  );
+}
+
+function Readiness({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return (
+    <li className="flex items-center justify-between">
+      <span className="text-ink-muted">{label}</span>
+      <span
+        className={cn("font-medium capitalize", ok ? "text-trust-trusted" : "text-trust-review")}
+      >
+        {value}
+      </span>
+    </li>
   );
 }

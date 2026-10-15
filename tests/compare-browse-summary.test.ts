@@ -6,6 +6,7 @@ import {
   browseCompareOverflowHint,
   browseCompareSelectedEntries,
   browseCompareSummary,
+  browseCompareUiState,
   shouldShowBrowseCompareHint,
 } from "@/lib/compare-browse-summary";
 import { compareSurfaceSummary } from "@/lib/compare-surface-summary-lib";
@@ -128,5 +129,12 @@ describe("compare browse summary", () => {
     expect(browseCompareHintText(five)).toBe(
       "Open compare to review trust and next steps side by side.",
     );
+    expect(browseCompareUiState(five)).toEqual({
+      search: { ids: "mcp/one,mcp/two,mcp/three,mcp/four" },
+      selectedCount: 4,
+      hint: "Open compare to review trust and next steps side by side.",
+      overflowHint: "Opening 4 of 5 selected in compare.",
+    });
+    expect(browseCompareUiState([entry()])).toBeNull();
   });
 });

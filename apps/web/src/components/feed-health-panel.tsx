@@ -1,21 +1,7 @@
 import * as React from "react";
-import { Link } from "@tanstack/react-router";
 import { CheckCircle2, AlertTriangle, ExternalLink, Loader2 } from "lucide-react";
 import { CopyButton } from "@/components/copy-button";
-import { timeAgo } from "@/lib/format-lib";
 import { cn } from "@/lib/utils";
-import { trackEvent } from "@/lib/analytics";
-import {
-  feedHealthCopyAnalyticsData,
-  feedHealthCopyAnalyticsEvent,
-  feedHealthFeedOpenAnalyticsData,
-  feedHealthFeedOpenAnalyticsEvent,
-  feedHealthJsonAnalyticsData,
-  feedHealthJsonAnalyticsEvent,
-  feedHealthSeeAllAnalyticsData,
-  feedHealthSeeAllAnalyticsEvent,
-  feedHealthSeeAllDestination,
-} from "@/lib/feed-health-panel-cta-events";
 
 interface FeedHealth {
   id: string;
@@ -32,6 +18,18 @@ interface HealthPayload {
   generatedAt: string;
   count: number;
   feeds: FeedHealth[];
+}
+
+function formatAgo(iso: string | null): string {
+  if (!iso) return "—";
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.round(ms / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d}d ago`;
 }
 
 export function FeedHealthPanel({ compact = false }: { compact?: boolean }) {
@@ -78,7 +76,7 @@ export function FeedHealthPanel({ compact = false }: { compact?: boolean }) {
         <div>
           <div className="font-display text-sm font-semibold text-ink">Feed health</div>
           <p className="text-xs text-ink-muted">
-            {current}/{total} feeds current · last checked {timeAgo(data.generatedAt)}
+            {current}/{total} feeds current · last checked {formatAgo(data.generatedAt)}
           </p>
         </div>
         <a
@@ -86,15 +84,12 @@ export function FeedHealthPanel({ compact = false }: { compact?: boolean }) {
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink"
-          onClick={() =>
-            trackEvent(feedHealthJsonAnalyticsEvent(), feedHealthJsonAnalyticsData(total, current))
-          }
         >
           JSON <ExternalLink className="h-3 w-3" />
         </a>
       </div>
       <div className="divide-y divide-border">
-        {visible.map((f, i) => (
+        {visible.map((f) => (
           <div
             key={f.id}
             className={cn(
@@ -121,56 +116,27 @@ export function FeedHealthPanel({ compact = false }: { compact?: boolean }) {
                 )}
                 {f.isCurrent ? "Current" : "Stale"}
               </span>
-              <a
-                href={f.url}
-                className="truncate font-medium text-ink hover:underline"
-                onClick={() =>
-                  trackEvent(
-                    feedHealthFeedOpenAnalyticsEvent(),
-                    feedHealthFeedOpenAnalyticsData(f.id, f.isCurrent, i, visible.length),
-                  )
-                }
-              >
+              <a href={f.url} className="truncate font-medium text-ink hover:underline">
                 {f.title}
               </a>
             </div>
             <div className="text-ink-muted">{f.itemCount} items</div>
-            <div className="text-ink-muted">latest {timeAgo(f.latestItemAt)}</div>
-            <div className="text-ink-muted">built {timeAgo(f.lastBuilt)}</div>
+            <div className="text-ink-muted">latest {formatAgo(f.latestItemAt)}</div>
+            <div className="text-ink-muted">built {formatAgo(f.lastBuilt)}</div>
             <div className="truncate font-mono text-ink-subtle" title={f.etag}>
               {f.etag.replace(/"/g, "")}
             </div>
-            <CopyButton
-              value={f.url}
-              label="Copy"
-              event={feedHealthCopyAnalyticsEvent()}
-              eventData={feedHealthCopyAnalyticsData(f.id, f.isCurrent)}
-            />
+            <CopyButton value={f.url} label="Copy" />
           </div>
         ))}
       </div>
-      {compact &&
-        data.feeds.length > visible.length &&
-        (() => {
-          const destination = feedHealthSeeAllDestination("feeds");
-          if (!destination) return null;
-          return (
-            <div className="border-t border-border px-4 py-2 text-right text-xs">
-              <Link
-                to={destination.to}
-                className="text-ink-muted hover:text-ink"
-                onClick={() =>
-                  trackEvent(
-                    feedHealthSeeAllAnalyticsEvent(),
-                    feedHealthSeeAllAnalyticsData(data.feeds.length, visible.length),
-                  )
-                }
-              >
-                See all {data.feeds.length} feeds →
-              </Link>
-            </div>
-          );
-        })()}
+      {compact && data.feeds.length > visible.length && (
+        <div className="border-t border-border px-4 py-2 text-right text-xs">
+          <a href="/feeds" className="text-ink-muted hover:text-ink">
+            See all {data.feeds.length} feeds →
+          </a>
+        </div>
+      )}
     </div>
   );
 }

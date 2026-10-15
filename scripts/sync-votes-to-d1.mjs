@@ -2,9 +2,6 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import { enumerateContentVoteKeys } from "./lib/enumerate-content-vote-keys.mjs";
-import { expectedKeyExclusionPredicate } from "./lib/d1-prune-predicate.mjs";
-import { wranglerArgs } from "./lib/wrangler-args.mjs";
-import { parseWranglerQueryResults } from "./lib/wrangler-query-results.mjs";
 
 const repoRoot = process.cwd();
 const d1Binding = process.env.SITE_D1_BINDING || "SITE_DB";
@@ -41,6 +38,18 @@ if (process.env.DEBUG_SYNC === "1") {
 
 const voteTables = new Set(["votes_by_client", "votes_entries"]);
 
+function wranglerArgs(runMode, command, { json = false } = {}) {
+  return [
+    "d1",
+    "execute",
+    d1Binding,
+    runMode === "remote" ? "--remote" : "--local",
+    "--command",
+    command,
+    ...(json ? ["--json"] : []),
+  ];
+}
+
 function runWrangler(args) {
   execFileSync("pnpm", ["--filter", "web", "exec", "wrangler", ...args], {
     cwd: repoRoot,
@@ -54,7 +63,42 @@ function runWranglerQuery(args) {
     ["--filter", "web", "exec", "wrangler", ...args],
     { cwd: repoRoot, encoding: "utf8" },
   );
-  return parseWranglerQueryResults(output);
+  const jsonText = output.trim();
+  if (!jsonText) {
+    throw new Error("Could not parse wrangler prune output");
+  }
+  const payload = JSON.parse(jsonText);
+  if (Array.isArray(payload)) {
+    const statement = [...payload]
+      .reverse()
+      .find((result) => Array.isArray(result?.results));
+    return statement?.results ?? [];
+  }
+  return Array.isArray(payload?.results) ? payload.results : [];
+}
+
+function sqlString(value) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function expectedKeyExclusionPredicate(keys) {
+  const chunkSize = 200;
+  const sortedKeys = [...keys].sort();
+  if (sortedKeys.length === 0) {
+    throw new Error(
+      "Refusing to build prune predicate for empty content key set",
+    );
+  }
+
+  const clauses = [];
+  for (let index = 0; index < sortedKeys.length; index += chunkSize) {
+    const inList = sortedKeys
+      .slice(index, index + chunkSize)
+      .map(sqlString)
+      .join(", ");
+    clauses.push(`entry_key NOT IN (${inList})`);
+  }
+  return clauses.join(" AND ");
 }
 
 function pruneTableOrphans(runMode, tableName, whereClause) {
@@ -66,7 +110,6 @@ function pruneTableOrphans(runMode, tableName, whereClause) {
     wranglerArgs(
       runMode,
       `SELECT COUNT(*) AS pruned FROM ${tableName} WHERE ${whereClause};`,
-      d1Binding,
       { json: true },
     ),
   );
@@ -76,11 +119,7 @@ function pruneTableOrphans(runMode, tableName, whereClause) {
   }
 
   runWrangler(
-    wranglerArgs(
-      runMode,
-      `DELETE FROM ${tableName} WHERE ${whereClause};`,
-      d1Binding,
-    ),
+    wranglerArgs(runMode, `DELETE FROM ${tableName} WHERE ${whereClause};`),
   );
   return pruned;
 }
@@ -127,7 +166,6 @@ function applyMode(runMode) {
     wranglerArgs(
       runMode,
       "DELETE FROM votes_by_client WHERE entry_key NOT IN (SELECT entry_key FROM votes_entries);",
-      d1Binding,
     ),
   );
 

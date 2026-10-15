@@ -7,44 +7,17 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { z } from "zod";
-import { useMemo, useCallback } from "react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import { ResourceCard } from "@/components/resource-card";
 import { FilterChip, FilterChipGroup } from "@/components/filter-chip";
-import { platformLabel, sourceLabel, trustLabel } from "@/lib/facet-label-lib";
 import {
   countSearchResults,
   normalizeSearchQuery,
   search,
+  TRUST_SIGNAL_FILTERS,
   type TrustSignalFilter,
 } from "@/data/search";
-import {
-  BROWSE_TRUST_SIGNAL_OPTIONS,
-  browseTrustRelaxationTrials,
-  browseTrustSignalLabel,
-  buildBrowseTrustSignalCounts,
-  buildBrowseTrustUtilityOptions,
-  isBrowseTrustSignalFilter,
-  toggleBrowseTrustSignal,
-} from "@/lib/browse-trust-filters";
-import { browseFilterDecisionUiState } from "@/lib/browse-filter-decision-hints";
-import { browseResultsTrustDecisionUiState } from "@/lib/browse-results-trust-decision";
-import { BrowseResultsTrustPanel } from "@/components/browse-results-trust-panel";
-import { BrowseCompareSelectionBanner } from "@/components/browse-compare-selection-banner";
-import { browseCompareSelectionContextState } from "@/lib/resource-card-trust-decision";
-import { browseRolloutSignalsState } from "@/lib/browse-rollout-signals";
-import { BrowseRolloutSignalsPanel } from "@/components/browse-rollout-signals-panel";
-import { browseAdoptionQueueState, type BrowseAdoptionPresetId } from "@/lib/browse-adoption-queue";
-import { BrowseAdoptionQueuePanel } from "@/components/browse-adoption-queue-panel";
-import {
-  browseDecisionConfidenceState,
-  type BrowseConfidencePresetId,
-} from "@/lib/browse-decision-confidence";
-import { BrowseDecisionConfidencePanel } from "@/components/browse-decision-confidence-panel";
-import { browseFreshnessDistributionState } from "@/lib/browse-freshness-distribution";
-import { BrowseFreshnessDistributionPanel } from "@/components/browse-freshness-distribution-panel";
-import { browseThemeDistributionState } from "@/lib/browse-theme-distribution";
-import { BrowseThemeDistributionPanel } from "@/components/browse-theme-distribution-panel";
 import {
   CATEGORIES,
   type Category,
@@ -64,50 +37,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useCompare } from "@/lib/compare";
-import { browseCompareInteractiveUiState } from "@/lib/compare-browse-interactive-ui-lib";
-import { browseCompareUrlSelectedCount } from "@/lib/compare-browse-share-link";
-import {
-  browseCompareOpenAnalyticsData,
-  browseCompareOpenAnalyticsEvent,
-} from "@/lib/entry-detail-cta-events";
-import {
-  browseDecisionPresetAnalyticsData,
-  browseDecisionPresetAnalyticsEvent,
-} from "@/lib/browse-decision-preset-cta-events";
-import {
-  browseFilterClearAllAnalyticsData,
-  browseFilterClearAllAnalyticsEvent,
-  browseFilterSelectAnalyticsData,
-  browseFilterSelectAnalyticsEvent,
-  browseSearchClearAnalyticsData,
-  browseSearchClearAnalyticsEvent,
-  browseSortSelectAnalyticsData,
-  browseSortSelectAnalyticsEvent,
-  browseViewSelectAnalyticsData,
-  browseViewSelectAnalyticsEvent,
-  type BrowseFilterAxis,
-} from "@/lib/browse-filter-cta-events";
-import {
-  browseEmptyEgressAnalyticsData,
-  browseEmptyEgressAnalyticsEvent,
-  browseEmptySuggestionApplyAnalyticsData,
-  browseEmptySuggestionApplyAnalyticsEvent,
-  browseLoadMoreAnalyticsData,
-  browseLoadMoreAnalyticsEvent,
-  browseRecentEntryClickAnalyticsData,
-  browseRecentEntryClickAnalyticsEvent,
-  browseRecentsPanelToggleAnalyticsData,
-  browseRecentsPanelToggleAnalyticsEvent,
-  browseSavedSearchApplyAnalyticsData,
-  browseSavedSearchApplyAnalyticsEvent,
-  browseSavedSearchLinkClickAnalyticsData,
-  browseSavedSearchLinkClickAnalyticsEvent,
-  browseSavedSearchRemoveAnalyticsData,
-  browseSavedSearchRemoveAnalyticsEvent,
-  browseSavedSearchSaveAnalyticsData,
-  browseSavedSearchSaveAnalyticsEvent,
-} from "@/lib/browse-saved-search-cta-events";
-import { trackEvent } from "@/lib/analytics";
+import { browseCompareUiState } from "@/lib/compare-browse-summary";
 import { useRecents, type SavedSearch } from "@/lib/recents";
 import { entryByRef } from "@/data/entries";
 import { SavedSearchManager } from "@/components/saved-search-manager";
@@ -120,15 +50,30 @@ function SavedSearchChipRow({
   currentLabel,
   canSave,
   onSave,
-  onApplySaved,
 }: {
   currentLabel: string;
   canSave: boolean;
   onSave: () => void;
-  onApplySaved: (search: SavedSearch) => void;
 }) {
   const recents = useRecents();
+  const navigate = useNavigate();
   const [managerOpen, setManagerOpen] = React.useState(false);
+
+  const apply = (s: SavedSearch) =>
+    navigate({
+      to: "/browse",
+      search: {
+        q: s.q ?? "",
+        category: s.category ?? "",
+        trust: s.trust ?? "",
+        source: s.source ?? "",
+        signal: s.signal ?? "",
+        platform: s.platform ?? "",
+        sort: (s.sort as "popular" | "newest" | "title") ?? "popular",
+        view: "row" as const,
+        compare: "",
+      },
+    });
 
   if (recents.saved.length === 0 && !canSave) return null;
 
@@ -141,7 +86,7 @@ function SavedSearchChipRow({
           <button
             key={s.id}
             type="button"
-            onClick={() => onApplySaved(s)}
+            onClick={() => apply(s)}
             className="inline-flex h-6 items-center gap-1 rounded-full border border-border bg-surface px-2 text-[11px] text-ink hover:bg-surface-2"
             title={`Open: ${s.label}`}
           >
@@ -210,7 +155,7 @@ export const Route = createFileRoute("/browse")({
     // Stale/external links with unknown category values (e.g. ?category=plugins) render an
     // empty result set that Google flags as a soft 404. Redirect them to clean /browse.
     const invalidCategory = search.category && !CATEGORIES.some((c) => c.id === search.category);
-    const invalidSignal = search.signal && !isBrowseTrustSignalFilter(search.signal);
+    const invalidSignal = search.signal && !isTrustSignalFilter(search.signal);
     if (invalidCategory || invalidSignal) {
       throw redirect({
         to: "/browse",
@@ -254,6 +199,25 @@ const PLATFORM_IDS: Platform[] = [
   "cli",
   "raycast",
 ];
+const TRUST_SIGNAL_OPTIONS: { id: TrustSignalFilter; label: string }[] = [
+  { id: "safety-notes", label: "Safety notes" },
+  { id: "privacy-notes", label: "Privacy notes" },
+  { id: "source-backed", label: "Source-backed" },
+  { id: "trusted-package", label: "Trusted package" },
+  { id: "reviewed", label: "Reviewed" },
+  { id: "checksums", label: "Checksums" },
+];
+const TRUST_SIGNAL_LABEL = Object.fromEntries(
+  TRUST_SIGNAL_OPTIONS.map((option) => [option.id, option.label]),
+) as Record<TrustSignalFilter, string>;
+
+function isTrustSignalFilter(value: string): value is TrustSignalFilter {
+  return TRUST_SIGNAL_FILTERS.includes(value as TrustSignalFilter);
+}
+
+function signalLabel(value: string) {
+  return isTrustSignalFilter(value) ? TRUST_SIGNAL_LABEL[value] : "";
+}
 
 function Browse() {
   const sp = Route.useSearch();
@@ -311,7 +275,7 @@ function Browse() {
       categories: sp.category ? [sp.category as Category] : undefined,
       trust: sp.trust ? [sp.trust as TrustLevel] : undefined,
       source: sp.source ? [sp.source as SourceStatus] : undefined,
-      signal: isBrowseTrustSignalFilter(sp.signal) ? sp.signal : "",
+      signal: isTrustSignalFilter(sp.signal) ? sp.signal : "",
       platforms: sp.platform ? [sp.platform as Platform] : undefined,
       sort: sp.sort,
     }),
@@ -331,132 +295,12 @@ function Browse() {
     navigate({ search: (prev: typeof sp) => ({ ...prev, ...patch }) });
   };
 
-  const countForSlice = useCallback(
-    (slice: typeof sp) =>
-      countSearchResults({
-        q: slice.q,
-        categories: slice.category ? [slice.category as Category] : undefined,
-        trust: slice.trust ? [slice.trust as TrustLevel] : undefined,
-        source: slice.source ? [slice.source as SourceStatus] : undefined,
-        signal: isBrowseTrustSignalFilter(slice.signal) ? slice.signal : "",
-        platforms: slice.platform ? [slice.platform as Platform] : undefined,
-        sort: slice.sort,
-      }),
-    [],
-  );
-
-  const onCategoryFilter = useCallback(
-    (value: string) => {
-      if (value === sp.category) return;
-      const patch = { category: value };
-      trackEvent(
-        browseFilterSelectAnalyticsEvent(),
-        browseFilterSelectAnalyticsData(
-          "category",
-          value || "all",
-          value !== "",
-          countForSlice({ ...sp, ...patch }),
-        ),
-      );
-      set(patch);
-    },
-    [countForSlice, sp],
-  );
-
-  const onToggleAxisFilter = useCallback(
-    (axis: Exclude<BrowseFilterAxis, "category" | "signal">, value: string) => {
-      const current = sp[axis];
-      const next = current === value ? "" : value;
-      if (next === current) return;
-      const patch = { [axis]: next } as Partial<typeof sp>;
-      trackEvent(
-        browseFilterSelectAnalyticsEvent(),
-        browseFilterSelectAnalyticsData(
-          axis,
-          value,
-          next !== "",
-          countForSlice({ ...sp, ...patch }),
-        ),
-      );
-      set(patch);
-    },
-    [countForSlice, sp],
-  );
-
-  const onTrustSignalFilter = useCallback(
-    (optionId: TrustSignalFilter) => {
-      const next = toggleBrowseTrustSignal(sp.signal, optionId);
-      if (next === sp.signal) return;
-      const patch = { signal: next };
-      trackEvent(
-        browseFilterSelectAnalyticsEvent(),
-        browseFilterSelectAnalyticsData(
-          "signal",
-          optionId,
-          next !== "",
-          countForSlice({ ...sp, ...patch }),
-        ),
-      );
-      set(patch);
-    },
-    [countForSlice, sp],
-  );
-
-  const onTrustUtilityFilter = useCallback(
-    (value: string) => {
-      if (value === sp.signal) return;
-      const patch = { signal: value };
-      trackEvent(
-        browseFilterSelectAnalyticsEvent(),
-        browseFilterSelectAnalyticsData(
-          "signal",
-          value || "all",
-          value !== "",
-          countForSlice({ ...sp, ...patch }),
-        ),
-      );
-      set(patch);
-    },
-    [countForSlice, sp],
-  );
-
-  const onSortSelect = useCallback(
-    (sort: typeof sp.sort) => {
-      if (sort === sp.sort) return;
-      const patch = { sort };
-      trackEvent(
-        browseSortSelectAnalyticsEvent(),
-        browseSortSelectAnalyticsData(sort, countForSlice({ ...sp, ...patch })),
-      );
-      set(patch);
-    },
-    [countForSlice, sp],
-  );
-
-  const onViewSelect = useCallback(
-    (view: typeof sp.view) => {
-      if (view === sp.view) return;
-      trackEvent(browseViewSelectAnalyticsEvent(), browseViewSelectAnalyticsData(view));
-      set({ view });
-    },
-    [sp.view],
-  );
-
   // --- Compare URL <-> context round-trip ----------------------------------
   const compareParam = sp.compare;
   // Hydrate from URL on mount + whenever the param changes externally
   React.useEffect(() => {
     compare.hydrate(compareParam);
-    if (compareParam) {
-      compare.setOpen(true);
-      const selectedCount = browseCompareUrlSelectedCount(compareParam);
-      if (selectedCount > 0) {
-        trackEvent(
-          browseCompareOpenAnalyticsEvent(),
-          browseCompareOpenAnalyticsData(selectedCount, "browse-compare-url"),
-        );
-      }
-    }
+    if (compareParam) compare.setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareParam]);
   // Push selection changes back into the URL (debounced via effect)
@@ -470,78 +314,7 @@ function Browse() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareSig]);
 
-  const browseCompareUi = useMemo(
-    () => browseCompareInteractiveUiState(compare.items),
-    [compare.items],
-  );
-
-  const browseFilterDecision = useMemo(
-    () =>
-      browseFilterDecisionUiState(
-        {
-          q: sp.q,
-          category: sp.category,
-          trust: sp.trust,
-          source: sp.source,
-          signal: sp.signal,
-          platform: sp.platform,
-          sort: sp.sort,
-        },
-        results,
-        compare.items.length,
-      ),
-    [sp, results, compare.items.length],
-  );
-
-  const browseResultsTrust = useMemo(
-    () => browseResultsTrustDecisionUiState(results, compare.items.length),
-    [results, compare.items.length],
-  );
-
-  const browseCompareSelection = useMemo(
-    () => browseCompareSelectionContextState(compare.items),
-    [compare.items],
-  );
-  const browseRolloutSignals = useMemo(() => browseRolloutSignalsState(results, 12), [results]);
-  const [adoptionPreset, setAdoptionPreset] = React.useState<BrowseAdoptionPresetId>("balanced");
-  const browseAdoptionQueue = useMemo(
-    () => browseAdoptionQueueState(results, adoptionPreset, 8),
-    [results, adoptionPreset],
-  );
-  const [confidencePreset, setConfidencePreset] =
-    React.useState<BrowseConfidencePresetId>("balanced");
-  const browseDecisionConfidence = useMemo(
-    () => browseDecisionConfidenceState(results, confidencePreset, 8),
-    [results, confidencePreset],
-  );
-  const onAdoptionPresetSelect = useCallback(
-    (preset: BrowseAdoptionPresetId) => {
-      if (preset === adoptionPreset) return;
-      trackEvent(
-        browseDecisionPresetAnalyticsEvent(),
-        browseDecisionPresetAnalyticsData("adoption-queue", preset, results.length),
-      );
-      setAdoptionPreset(preset);
-    },
-    [adoptionPreset, results.length],
-  );
-  const onConfidencePresetSelect = useCallback(
-    (preset: BrowseConfidencePresetId) => {
-      if (preset === confidencePreset) return;
-      trackEvent(
-        browseDecisionPresetAnalyticsEvent(),
-        browseDecisionPresetAnalyticsData("decision-confidence", preset, results.length),
-      );
-      setConfidencePreset(preset);
-    },
-    [confidencePreset, results.length],
-  );
-  const nowIso = useMemo(() => new Date().toISOString(), []);
-  const browseThemes = useMemo(() => browseThemeDistributionState(results, 24), [results]);
-  const browseFreshness = useMemo(
-    () => browseFreshnessDistributionState(results, nowIso, 12),
-    [results, nowIso],
-  );
+  const browseCompareUi = useMemo(() => browseCompareUiState(compare.items), [compare.items]);
 
   const activeCount =
     Number(!!sp.q) +
@@ -566,59 +339,11 @@ function Browse() {
       },
     });
 
-  const onClearAllFilters = useCallback(() => {
-    if (activeCount === 0) return;
-    trackEvent(
-      browseFilterClearAllAnalyticsEvent(),
-      browseFilterClearAllAnalyticsData(
-        activeCount,
-        countForSlice({
-          ...sp,
-          q: "",
-          category: "",
-          trust: "",
-          source: "",
-          signal: "",
-          platform: "",
-        }),
-      ),
-    );
-    clearAll();
-  }, [activeCount, countForSlice, sp]);
-
-  const applySavedSearch = useCallback(
-    (search: SavedSearch) => {
-      trackEvent(
-        browseSavedSearchApplyAnalyticsEvent(),
-        browseSavedSearchApplyAnalyticsData(search),
-      );
-      navigate({
-        to: "/browse",
-        search: {
-          q: search.q ?? "",
-          category: search.category ?? "",
-          trust: search.trust ?? "",
-          source: search.source ?? "",
-          signal: search.signal ?? "",
-          platform: search.platform ?? "",
-          sort: (search.sort as "popular" | "newest" | "title") ?? "popular",
-          view: "row" as const,
-          compare: "",
-        },
-      });
-    },
-    [navigate],
-  );
-
   const saveCurrent = () => {
     if (activeCount === 0) return;
-    trackEvent(
-      browseSavedSearchSaveAnalyticsEvent(),
-      browseSavedSearchSaveAnalyticsData(activeCount),
-    );
     const label = sp.q
       ? `“${sp.q}”${sp.category ? ` · ${sp.category}` : ""}`
-      : `${sp.category || sp.trust || sp.source || browseTrustSignalLabel(sp.signal) || sp.platform || "Filter"}`;
+      : `${sp.category || sp.trust || sp.source || signalLabel(sp.signal) || sp.platform || "Filter"}`;
     recents.saveSearch({
       label,
       q: sp.q,
@@ -639,15 +364,6 @@ function Browse() {
     setShown(PAGE);
   }, [sp.q, sp.category, sp.trust, sp.source, sp.signal, sp.platform, sp.sort]);
 
-  const onLoadMore = useCallback(() => {
-    const loadCount = Math.min(PAGE, results.length - shown);
-    trackEvent(
-      browseLoadMoreAnalyticsEvent(),
-      browseLoadMoreAnalyticsData(shown, results.length, loadCount),
-    );
-    setShown((n) => n + PAGE);
-  }, [results.length, shown]);
-
   // Per-axis facet counts: how many results if this value were the only filter
   // in its axis. Memoized on the search params and counted without sorting so
   // sidebar counts do not pay for result ranking on every filter change.
@@ -662,7 +378,7 @@ function Browse() {
         categories: merged.category ? [merged.category as Category] : undefined,
         trust: merged.trust ? [merged.trust as TrustLevel] : undefined,
         source: merged.source ? [merged.source as SourceStatus] : undefined,
-        signal: isBrowseTrustSignalFilter(merged.signal) ? merged.signal : "",
+        signal: isTrustSignalFilter(merged.signal) ? merged.signal : "",
         platforms: merged.platform ? [merged.platform as Platform] : undefined,
         sort: merged.sort,
       });
@@ -671,15 +387,9 @@ function Browse() {
       category: Object.fromEntries(CATEGORIES.map((c) => [c.id, countFor("category", c.id)])),
       trust: Object.fromEntries(TRUST_LEVELS.map((t) => [t, countFor("trust", t)])),
       source: Object.fromEntries(SOURCE_STATUSES.map((s) => [s, countFor("source", s)])),
-      signal: buildBrowseTrustSignalCounts({
-        q: sp.q,
-        category: sp.category,
-        trust: sp.trust,
-        source: sp.source,
-        signal: sp.signal,
-        platform: sp.platform,
-        sort: sp.sort,
-      }),
+      signal: Object.fromEntries(
+        TRUST_SIGNAL_OPTIONS.map((option) => [option.id, countFor("signal", option.id)]),
+      ),
       platform: Object.fromEntries(PLATFORM_IDS.map((p) => [p, countFor("platform", p)])),
     } as Record<string, Record<string, number>>;
   }, [sp]);
@@ -689,7 +399,7 @@ function Browse() {
     value: string,
   ) => facetCounts[axis]?.[value] ?? 0;
 
-  // Focus search on "/" key; cycle view density on "[" / "]".
+  // Focus search on "/" key.
   const searchRef = React.useRef<HTMLInputElement>(null);
   useKeyboardShortcuts({
     "/": () => searchRef.current?.focus(),
@@ -697,23 +407,6 @@ function Browse() {
       set({ view: sp.view === "compact" ? "row" : sp.view === "row" ? "grid" : "compact" }),
     "[": () => set({ view: sp.view === "grid" ? "row" : sp.view === "row" ? "compact" : "grid" }),
   });
-  // Escape clears search while the input has focus (#5716). Needs whenTyping so
-  // the shared hook does not skip bindings inside INPUT; keep it on a separate
-  // registration so "/" / "[" / "]" stay suppressed while typing.
-  useKeyboardShortcuts(
-    {
-      Escape: () => {
-        if (document.activeElement !== searchRef.current) return;
-        if (!qInput) return;
-        trackEvent(
-          browseSearchClearAnalyticsEvent(),
-          browseSearchClearAnalyticsData(Boolean(qInput.trim()), results.length),
-        );
-        setQInput("");
-      },
-    },
-    { whenTyping: true },
-  );
 
   const recentEntries = recents.entries
     .map((r) => entryByRef(r.category, r.slug))
@@ -744,11 +437,11 @@ function Browse() {
       value: sp.source,
       onClear: () => set({ source: "" }),
     });
-  if (isBrowseTrustSignalFilter(sp.signal))
+  if (isTrustSignalFilter(sp.signal))
     activeFilters.push({
       key: "signal",
       label: "Signal",
-      value: browseTrustSignalLabel(sp.signal),
+      value: signalLabel(sp.signal),
       onClear: () => set({ signal: "" }),
     });
   if (sp.platform)
@@ -763,15 +456,15 @@ function Browse() {
   const suggestions = useMemo(() => {
     if (results.length > 0 || activeFilters.length === 0)
       return [] as { label: string; apply: () => void; count: number }[];
-    const trials = browseTrustRelaxationTrials({
-      q: sp.q,
-      category: sp.category,
-      trust: sp.trust,
-      source: sp.source,
-      signal: sp.signal,
-      platform: sp.platform,
-      sort: sp.sort,
-    });
+    const trials: { label: string; patch: Partial<typeof sp> }[] = [];
+    if (sp.platform)
+      trials.push({ label: `Remove platform "${sp.platform}"`, patch: { platform: "" } });
+    if (sp.signal)
+      trials.push({ label: `Remove signal "${signalLabel(sp.signal)}"`, patch: { signal: "" } });
+    if (sp.source) trials.push({ label: `Remove source "${sp.source}"`, patch: { source: "" } });
+    if (sp.trust) trials.push({ label: `Remove trust "${sp.trust}"`, patch: { trust: "" } });
+    if (sp.category) trials.push({ label: `Search all categories`, patch: { category: "" } });
+    if (sp.q) trials.push({ label: `Drop search "${sp.q}"`, patch: { q: "" } });
     return trials
       .map((t) => {
         const merged = { ...sp, ...t.patch };
@@ -780,7 +473,7 @@ function Browse() {
           categories: merged.category ? [merged.category as Category] : undefined,
           trust: merged.trust ? [merged.trust as TrustLevel] : undefined,
           source: merged.source ? [merged.source as SourceStatus] : undefined,
-          signal: isBrowseTrustSignalFilter(merged.signal) ? merged.signal : "",
+          signal: isTrustSignalFilter(merged.signal) ? merged.signal : "",
           platforms: merged.platform ? [merged.platform as Platform] : undefined,
           sort: merged.sort,
         });
@@ -791,11 +484,6 @@ function Browse() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp, results.length]);
 
-  const trustUtilityOptions = useMemo(
-    () => buildBrowseTrustUtilityOptions(facetCounts.signal),
-    [facetCounts.signal],
-  );
-
   return (
     <div className="mx-auto max-w-page px-4 py-6 sm:px-6">
       <h1 className="sr-only">Browse the directory</h1>
@@ -805,7 +493,11 @@ function Browse() {
           <div className="sticky top-20 flex flex-col gap-6">
             <FilterSection title="Category">
               <FilterChipGroup label="Filter by category" multi={false}>
-                <FilterChip role="radio" active={!sp.category} onClick={() => onCategoryFilter("")}>
+                <FilterChip
+                  role="radio"
+                  active={!sp.category}
+                  onClick={() => set({ category: "" })}
+                >
                   All
                 </FilterChip>
                 {CATEGORIES.map((c) => (
@@ -813,7 +505,7 @@ function Browse() {
                     key={c.id}
                     role="radio"
                     active={sp.category === c.id}
-                    onClick={() => onCategoryFilter(c.id)}
+                    onClick={() => set({ category: c.id })}
                     count={axisCount("category", c.id)}
                   >
                     {c.label}
@@ -828,11 +520,10 @@ function Browse() {
                   <FilterChip
                     key={t}
                     active={sp.trust === t}
-                    onClick={() => onToggleAxisFilter("trust", t)}
+                    onClick={() => set({ trust: sp.trust === t ? "" : t })}
                     count={axisCount("trust", t)}
-                    preserveCase
                   >
-                    {trustLabel(t)}
+                    {t}
                   </FilterChip>
                 ))}
               </FilterChipGroup>
@@ -844,11 +535,10 @@ function Browse() {
                   <FilterChip
                     key={s}
                     active={sp.source === s}
-                    onClick={() => onToggleAxisFilter("source", s)}
+                    onClick={() => set({ source: sp.source === s ? "" : s })}
                     count={axisCount("source", s)}
-                    preserveCase
                   >
-                    {sourceLabel(s)}
+                    {s}
                   </FilterChip>
                 ))}
               </FilterChipGroup>
@@ -860,11 +550,10 @@ function Browse() {
                   <FilterChip
                     key={p}
                     active={sp.platform === p}
-                    onClick={() => onToggleAxisFilter("platform", p)}
+                    onClick={() => set({ platform: sp.platform === p ? "" : p })}
                     count={axisCount("platform", p)}
-                    preserveCase
                   >
-                    {platformLabel(p)}
+                    {p}
                   </FilterChip>
                 ))}
               </FilterChipGroup>
@@ -877,7 +566,7 @@ function Browse() {
                 </span>
                 <button
                   type="button"
-                  onClick={onClearAllFilters}
+                  onClick={clearAll}
                   className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                 >
                   <X className="h-3 w-3" /> Clear {activeCount}{" "}
@@ -897,7 +586,7 @@ function Browse() {
 
         {/* Results */}
         <div>
-          <div className="sticky top-16 z-20 -mx-4 flex flex-col gap-3 border-b border-border bg-background/95 px-4 pb-4 pt-2 backdrop-blur supports-backdrop-filter:bg-background/80 sm:-mx-6 sm:px-6">
+          <div className="sticky top-16 z-20 -mx-4 flex flex-col gap-3 border-b border-border bg-background/95 px-4 pb-4 pt-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6">
             <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/40">
               <SearchIcon className="h-4 w-4 text-ink-muted" />
               <input
@@ -914,13 +603,7 @@ function Browse() {
               {qInput && (
                 <button
                   type="button"
-                  onClick={() => {
-                    trackEvent(
-                      browseSearchClearAnalyticsEvent(),
-                      browseSearchClearAnalyticsData(Boolean(qInput.trim()), results.length),
-                    );
-                    setQInput("");
-                  }}
+                  onClick={() => setQInput("")}
                   aria-label="Clear search"
                   className="rounded p-1 text-ink-subtle hover:text-ink"
                 >
@@ -953,7 +636,7 @@ function Browse() {
                     </>
                   )}
                 </span>
-                {browseCompareUi?.showHint ? (
+                {browseCompareUi ? (
                   <div className="inline-flex flex-col items-end gap-1">
                     {browseCompareUi.overflowHint ? (
                       <span className="max-w-xs text-right text-[11px] text-amber-800">
@@ -968,15 +651,6 @@ function Browse() {
                     <Link
                       to="/compare"
                       search={browseCompareUi.search}
-                      onClick={() => {
-                        trackEvent(
-                          browseCompareOpenAnalyticsEvent(),
-                          browseCompareOpenAnalyticsData(
-                            browseCompareUi.selectedCount,
-                            "browse-toolbar",
-                          ),
-                        );
-                      }}
                       className="inline-flex items-center gap-1.5 rounded-full border border-accent bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-ink hover:bg-accent/15"
                     >
                       <span className="font-mono">{browseCompareUi.selectedCount}</span> selected ·
@@ -985,29 +659,13 @@ function Browse() {
                   </div>
                 ) : null}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                  Utility
-                  <select
-                    value={sp.signal}
-                    onChange={(e) => onTrustUtilityFilter(e.target.value)}
-                    aria-label="Trust signal utility filter"
-                    className="h-7 max-w-44 rounded-md border border-border bg-surface px-2 text-xs text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-                  >
-                    {trustUtilityOptions.map((option) => (
-                      <option key={option.id || "all"} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              <div className="flex items-center gap-2">
                 <label className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
                   <ArrowDownNarrowWide className="h-3.5 w-3.5" />
                   Sort
                   <select
                     value={sp.sort}
-                    onChange={(e) => onSortSelect(e.target.value as typeof sp.sort)}
+                    onChange={(e) => set({ sort: e.target.value as typeof sp.sort })}
                     className="h-7 rounded-md border border-border bg-surface px-2 text-xs text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                   >
                     <option value="popular">Popular</option>
@@ -1020,17 +678,11 @@ function Browse() {
                   role="radiogroup"
                   aria-label="Result density"
                 >
-                  {/* role="radio" + aria-checked to match the radiogroup container,
-                      like this file's other radiogroups (FilterChip). Note: none of
-                      them implement arrow-key roving tabindex — each radio stays
-                      individually tab-focusable; that is a separate concern from the
-                      mislabeled attributes fixed here (#5454). */}
                   {(["compact", "row", "grid"] as const).map((v) => (
                     <button
                       key={v}
-                      role="radio"
-                      onClick={() => onViewSelect(v)}
-                      aria-checked={sp.view === v}
+                      onClick={() => set({ view: v })}
+                      aria-pressed={sp.view === v}
                       className={cn(
                         "px-2 py-1 text-xs capitalize transition-colors duration-200 ease-out motion-safe:active:scale-[0.97]",
                         sp.view === v
@@ -1051,21 +703,20 @@ function Browse() {
                   : sp.category ||
                     sp.trust ||
                     sp.source ||
-                    browseTrustSignalLabel(sp.signal) ||
+                    signalLabel(sp.signal) ||
                     sp.platform ||
                     ""
               }
               canSave={activeCount > 0}
               onSave={saveCurrent}
-              onApplySaved={applySavedSearch}
             />
             <FilterChipGroup label="Trust signal quick filters" multi={false}>
-              {BROWSE_TRUST_SIGNAL_OPTIONS.map((option) => (
+              {TRUST_SIGNAL_OPTIONS.map((option) => (
                 <FilterChip
                   key={option.id}
                   role="radio"
                   active={sp.signal === option.id}
-                  onClick={() => onTrustSignalFilter(option.id)}
+                  onClick={() => set({ signal: sp.signal === option.id ? "" : option.id })}
                   count={axisCount("signal", option.id)}
                 >
                   {option.label}
@@ -1082,66 +733,8 @@ function Browse() {
           </div>
 
           {activeFilters.length > 0 && (
-            <FilterSummaryBar
-              filters={activeFilters}
-              onClearAll={onClearAllFilters}
-              className="mt-3"
-            />
+            <FilterSummaryBar filters={activeFilters} onClearAll={clearAll} className="mt-3" />
           )}
-
-          {browseFilterDecision.hint ? (
-            <p className="mt-2 text-xs text-ink-muted" role="status">
-              {browseFilterDecision.hint}
-            </p>
-          ) : null}
-
-          {browseResultsTrust.showPanel ? (
-            <BrowseResultsTrustPanel
-              state={browseResultsTrust}
-              compareLink={
-                browseCompareUi?.showHint
-                  ? {
-                      search: browseCompareUi.search,
-                      selectedCount: browseCompareUi.selectedCount,
-                    }
-                  : null
-              }
-              onTrustLevelSelect={(level) => set({ trust: level === sp.trust ? "" : level })}
-              onCoverageSelect={(_coverageId, signal) =>
-                set({ signal: signal === sp.signal ? "" : signal })
-              }
-              className="mt-3"
-            />
-          ) : null}
-          <BrowseRolloutSignalsPanel
-            state={browseRolloutSignals}
-            onSignalRowSelect={(_signalId, patch) => {
-              if (patch.signal != null) {
-                set({ signal: patch.signal === sp.signal ? "" : patch.signal });
-              }
-            }}
-            className="mt-3"
-          />
-          <BrowseAdoptionQueuePanel
-            state={browseAdoptionQueue}
-            selectedPreset={adoptionPreset}
-            onSelectPreset={onAdoptionPresetSelect}
-            className="mt-3"
-          />
-          <BrowseDecisionConfidencePanel
-            state={browseDecisionConfidence}
-            selectedPreset={confidencePreset}
-            onSelectPreset={onConfidencePresetSelect}
-            className="mt-3"
-          />
-          <BrowseFreshnessDistributionPanel
-            state={browseFreshness}
-            onBucketSelect={(_bucketId, search) => {
-              if (search.sort) set({ sort: search.sort });
-            }}
-            className="mt-3"
-          />
-          <BrowseThemeDistributionPanel state={browseThemes} className="mt-3" />
 
           {sp.category &&
             (() => {
@@ -1156,7 +749,7 @@ function Browse() {
           {/* Mobile filter chips */}
           <div className="relative mt-4 lg:hidden">
             <div
-              className="scrollbar-none flex gap-2 overflow-x-auto pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               role="radiogroup"
               aria-label="Filter by category"
             >
@@ -1164,46 +757,21 @@ function Browse() {
                 { id: "", label: "All" },
                 ...CATEGORIES.map((c) => ({ id: c.id, label: c.label })),
               ].map((c) => (
-                <span key={c.id || "all"} className="shrink-0">
-                  <FilterChip
-                    role="radio"
-                    active={(sp.category || "") === c.id}
-                    onClick={() => onCategoryFilter(c.id)}
-                    count={c.id ? axisCount("category", c.id) : undefined}
-                  >
+                <Link
+                  key={c.id || "all"}
+                  to="/browse"
+                  search={{ ...sp, category: c.id }}
+                  className="shrink-0"
+                >
+                  <FilterChip role="radio" active={(sp.category || "") === c.id} onClick={() => {}}>
                     {c.label}
                   </FilterChip>
-                </span>
+                </Link>
               ))}
             </div>
             <span
               aria-hidden
-              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-background to-transparent"
-            />
-          </div>
-
-          <div className="relative mt-2 lg:hidden">
-            <div
-              className="scrollbar-none flex gap-2 overflow-x-auto pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-              role="radiogroup"
-              aria-label="Trust signal quick filters"
-            >
-              {BROWSE_TRUST_SIGNAL_OPTIONS.map((option) => (
-                <span key={option.id} className="shrink-0">
-                  <FilterChip
-                    role="radio"
-                    active={sp.signal === option.id}
-                    onClick={() => onTrustSignalFilter(option.id)}
-                    count={axisCount("signal", option.id)}
-                  >
-                    {option.label}
-                  </FilterChip>
-                </span>
-              ))}
-            </div>
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-background to-transparent"
+              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent"
             />
           </div>
 
@@ -1212,17 +780,6 @@ function Browse() {
             <details
               className="mt-4 rounded-lg border border-border bg-surface px-3 py-2 [&[open]>summary>svg]:rotate-90"
               open={recents.saved.some((s) => s.alerts?.enabled)}
-              onToggle={(e) => {
-                const open = (e.currentTarget as HTMLDetailsElement).open;
-                trackEvent(
-                  browseRecentsPanelToggleAnalyticsEvent(),
-                  browseRecentsPanelToggleAnalyticsData(
-                    open,
-                    recents.saved.length,
-                    recentEntries.length,
-                  ),
-                );
-              }}
             >
               <summary className="flex cursor-pointer list-none items-center gap-2 text-xs text-ink-muted hover:text-ink">
                 <Clock className="h-3.5 w-3.5" />
@@ -1255,22 +812,12 @@ function Browse() {
                               compare: sp.compare,
                             }}
                             className="text-ink hover:underline"
-                            onClick={() =>
-                              trackEvent(
-                                browseSavedSearchLinkClickAnalyticsEvent(),
-                                browseSavedSearchLinkClickAnalyticsData(s),
-                              )
-                            }
                           >
                             {s.label}
                           </Link>
                           <button
                             type="button"
                             onClick={() => {
-                              trackEvent(
-                                browseSavedSearchRemoveAnalyticsEvent(),
-                                browseSavedSearchRemoveAnalyticsData(recents.saved.length),
-                              );
                               recents.removeSaved(s.id);
                               toast(`Removed “${s.label}”`);
                             }}
@@ -1288,18 +835,12 @@ function Browse() {
                   <div className="flex items-start gap-2">
                     <Clock className="mt-1 h-3.5 w-3.5 shrink-0 text-ink-subtle" aria-hidden />
                     <div className="flex flex-wrap gap-1.5">
-                      {recentEntries.map((e, index) => (
+                      {recentEntries.map((e) => (
                         <Link
                           key={`${e.category}/${e.slug}`}
                           to="/entry/$category/$slug"
                           params={{ category: e.category, slug: e.slug }}
                           className="inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-xs text-ink-muted hover:text-ink"
-                          onClick={() =>
-                            trackEvent(
-                              browseRecentEntryClickAnalyticsEvent(),
-                              browseRecentEntryClickAnalyticsData(index, recentEntries.length),
-                            )
-                          }
                         >
                           {e.title}
                         </Link>
@@ -1333,13 +874,7 @@ function Browse() {
                     <li key={s.label}>
                       <button
                         type="button"
-                        onClick={() => {
-                          trackEvent(
-                            browseEmptySuggestionApplyAnalyticsEvent(),
-                            browseEmptySuggestionApplyAnalyticsData(s.count),
-                          );
-                          s.apply();
-                        }}
+                        onClick={s.apply}
                         className="inline-flex w-full items-center justify-between gap-3 rounded-md border border-border bg-surface px-3 py-1.5 text-ink transition-colors duration-200 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.99]"
                       >
                         <span>{s.label}</span>
@@ -1358,12 +893,6 @@ function Browse() {
                       href={`https://github.com/search?q=${encodeURIComponent(sp.q)}&type=repositories`}
                       target="_blank"
                       rel="noreferrer"
-                      onClick={() =>
-                        trackEvent(
-                          browseEmptyEgressAnalyticsEvent(),
-                          browseEmptyEgressAnalyticsData("github-search", true, activeCount),
-                        )
-                      }
                       className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 font-medium text-ink hover:bg-surface-2"
                     >
                       Search GitHub for "{sp.q}" <ExternalLink className="h-3 w-3" />
@@ -1371,12 +900,6 @@ function Browse() {
                   )}
                   <a
                     href={sp.q ? `/submit?title=${encodeURIComponent(sp.q)}` : "/submit"}
-                    onClick={() =>
-                      trackEvent(
-                        browseEmptyEgressAnalyticsEvent(),
-                        browseEmptyEgressAnalyticsData("submit", Boolean(sp.q), activeCount),
-                      )
-                    }
                     className="inline-flex h-8 items-center gap-1.5 rounded-md bg-ink px-3 font-medium text-background hover:bg-ink/90"
                   >
                     Submit this resource
@@ -1386,7 +909,7 @@ function Browse() {
               {activeCount > 0 && (
                 <button
                   type="button"
-                  onClick={onClearAllFilters}
+                  onClick={clearAll}
                   className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-2"
                 >
                   <X className="h-3.5 w-3.5" /> Clear all filters
@@ -1395,23 +918,10 @@ function Browse() {
             </div>
           ) : (
             <>
-              {browseCompareSelection.showBanner && browseCompareUi ? (
-                <BrowseCompareSelectionBanner
-                  state={browseCompareSelection}
-                  compareSearch={browseCompareUi.search}
-                  className="mt-4"
-                />
-              ) : null}
               {sp.view === "grid" ? (
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {results.slice(0, shown).map((e) => (
-                    <ResourceCard
-                      key={`${e.category}/${e.slug}`}
-                      entry={e}
-                      variant="grid"
-                      compareItems={compare.items}
-                      analyticsSurface="browse-grid"
-                    />
+                    <ResourceCard key={`${e.category}/${e.slug}`} entry={e} variant="grid" />
                   ))}
                 </div>
               ) : sp.view === "compact" ? (
@@ -1422,20 +932,13 @@ function Browse() {
                       entry={e}
                       variant="compact"
                       rank={i + 1}
-                      compareItems={compare.items}
-                      analyticsSurface="browse-compact"
                     />
                   ))}
                 </div>
               ) : (
                 <div className="mt-2 overflow-hidden rounded-lg border border-border bg-surface">
                   {results.slice(0, shown).map((e) => (
-                    <ResourceCard
-                      key={`${e.category}/${e.slug}`}
-                      entry={e}
-                      compareItems={compare.items}
-                      analyticsSurface="browse-row"
-                    />
+                    <ResourceCard key={`${e.category}/${e.slug}`} entry={e} />
                   ))}
                 </div>
               )}
@@ -1443,7 +946,7 @@ function Browse() {
                 <div className="mt-4 flex justify-center">
                   <button
                     type="button"
-                    onClick={onLoadMore}
+                    onClick={() => setShown((n) => n + PAGE)}
                     className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-4 text-sm font-medium text-ink transition-colors duration-200 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.98]"
                   >
                     Load {Math.min(PAGE, results.length - shown)} more · {results.length - shown}{" "}

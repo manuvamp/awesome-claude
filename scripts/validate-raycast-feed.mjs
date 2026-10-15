@@ -9,10 +9,6 @@ import {
   mcpConfigSupportsTarget,
 } from "@heyclaude/registry/mcp-install-config";
 
-import { stringHasLoneSurrogate } from "./lib/lone-surrogate.mjs";
-import { objectBlock, objectDefinesKey } from "./lib/raycast-source-block.mjs";
-import { equalStringArrays } from "./lib/equal-string-arrays.mjs";
-
 const repoRoot = process.cwd();
 const feedPath = path.join(repoRoot, "apps/web/public/data/raycast-index.json");
 const directoryPath = path.join(
@@ -66,6 +62,22 @@ function readSource(filePath) {
   return fs.readFileSync(filePath, "utf8");
 }
 
+function stringHasLoneSurrogate(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const nextCode = value.charCodeAt(index + 1);
+      if (nextCode >= 0xdc00 && nextCode <= 0xdfff) {
+        index += 1;
+        continue;
+      }
+      return true;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) return true;
+  }
+  return false;
+}
+
 function assertNoLoneSurrogates(value, label) {
   if (typeof value === "string") {
     if (stringHasLoneSurrogate(value))
@@ -83,6 +95,24 @@ function assertNoLoneSurrogates(value, label) {
       assertNoLoneSurrogates(item, `${label}.${key}`);
     }
   }
+}
+
+function objectBlock(source, name) {
+  const match = source.match(
+    new RegExp(`(?:const|export const)\\s+${name}[^=]*=\\s*{([\\s\\S]*?)\\n};`),
+  );
+  return match?.[1] ?? "";
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function objectDefinesKey(block, key) {
+  const escapedKey = escapeRegExp(key);
+  return new RegExp(
+    `(^|\\n)\\s*(?:${escapedKey}|["']${escapedKey}["'])\\s*:`,
+  ).test(block);
 }
 
 function normalizeMcpInstallTargets(value, label) {
@@ -106,6 +136,13 @@ function normalizeMcpInstallTargets(value, label) {
     targets.push(item);
   }
   return targets;
+}
+
+function equalStringArrays(left, right) {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => item === right[index])
+  );
 }
 
 if (!fs.existsSync(feedPath)) {
@@ -244,21 +281,17 @@ for (const entry of payload.entries) {
   }
   if (detail.copyText === undefined) {
     const llmsUrl = String(detail.llmsUrl || "");
-    const validLlmsUrl =
-      /^\/api\/registry\/entries\/[^/]+\/[^/]+\/llms\/?$/.test(llmsUrl);
+    const validLlmsUrl = /^\/api\/registry\/entries\/[^/]+\/[^/]+\/llms\/?$/.test(llmsUrl);
     if (!validLlmsUrl) {
       fail(`${key}: detail without copyText must expose llmsUrl`);
     }
   }
-  if (entry.copyText !== undefined && entry.copyTextTruncated) {
-    // A truncated feed preview must be backed by a longer full copyText in the
-    // detail payload. Guard the length access so a missing/non-string
-    // detail.copyText fails cleanly here instead of throwing a raw TypeError.
-    if (typeof detail.copyText !== "string") {
-      fail(`${key}: truncated feed entry requires a string detail copyText`);
-    } else if (detail.copyText.length <= String(entry.copyText ?? "").length) {
-      fail(`${key}: truncated feed entry must have longer detail copyText`);
-    }
+  if (
+    entry.copyText !== undefined &&
+    entry.copyTextTruncated &&
+    detail.copyText.length <= String(entry.copyText ?? "").length
+  ) {
+    fail(`${key}: truncated feed entry must have longer detail copyText`);
   }
   for (const field of [
     "brandName",

@@ -10,18 +10,6 @@ import {
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { Entry } from "@/types/registry";
-import { trackEvent, outboundHost } from "@/lib/analytics";
-import { hostOf } from "@/lib/source-citations-lib";
-import {
-  SOURCE_CITATIONS_DETAIL_SURFACE,
-  sourceCitationAnalyticsData,
-  sourceCitationAnalyticsEvent,
-  sourceCitationContributorDestination,
-  sourceCitationEgressAnalyticsData,
-  sourceCitationEgressAnalyticsEvent,
-  sourceCitationQualityDestination,
-  type SourceCitationKind,
-} from "@/lib/source-citations-cta-events";
 
 type Citation = {
   label: string;
@@ -30,17 +18,23 @@ type Citation = {
   Icon: React.ElementType;
   verifiedAt?: string;
   contributorSlug?: string;
-  kind?: SourceCitationKind;
 };
+
+function hostOf(url?: string): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
 
 export function SourceCitations({
   entry,
   resolveContributorSlug,
-  surface = SOURCE_CITATIONS_DETAIL_SURFACE,
 }: {
   entry: Entry;
   resolveContributorSlug?: (name: string, profileUrl?: string) => string | undefined;
-  surface?: string;
 }) {
   const cites: Citation[] = [];
   if (entry.sourceUrl) {
@@ -50,7 +44,6 @@ export function SourceCitations({
       hint: hostOf(entry.sourceUrl),
       Icon: GitBranch,
       verifiedAt: entry.brandVerifiedAt ?? entry.reviewedAt,
-      kind: "source-repo",
     });
   } else if (entry.repoUrl) {
     cites.push({
@@ -58,7 +51,6 @@ export function SourceCitations({
       href: entry.repoUrl,
       hint: hostOf(entry.repoUrl),
       Icon: GitBranch,
-      kind: "repo",
     });
   }
   if (entry.docsUrl) {
@@ -67,7 +59,6 @@ export function SourceCitations({
       href: entry.docsUrl,
       hint: hostOf(entry.docsUrl),
       Icon: BookOpen,
-      kind: "docs",
     });
   }
   if (
@@ -80,7 +71,6 @@ export function SourceCitations({
       href: entry.websiteUrl,
       hint: hostOf(entry.websiteUrl),
       Icon: ExternalLink,
-      kind: "website",
     });
   }
   if (entry.downloadUrl) {
@@ -89,7 +79,6 @@ export function SourceCitations({
       href: entry.downloadUrl,
       hint: hostOf(entry.downloadUrl),
       Icon: Package,
-      kind: "package",
     });
   }
   if (entry.reviewedBy) {
@@ -110,30 +99,11 @@ export function SourceCitations({
     });
   }
 
-  const onCitationOpen = React.useCallback(
-    (citation: Citation) => {
-      if (!citation.kind || !citation.href) return;
-      trackEvent(
-        sourceCitationAnalyticsEvent(),
-        sourceCitationAnalyticsData(
-          entry.category,
-          entry.slug,
-          citation.kind,
-          citation.hint ?? outboundHost(citation.href),
-          surface,
-        ),
-      );
-    },
-    [entry.category, entry.slug, surface],
-  );
-
   if (cites.length === 0) {
     return (
       <p className="text-sm text-ink-subtle">No external citations recorded for this entry.</p>
     );
   }
-
-  const qualityDestination = sourceCitationQualityDestination("quality-source-provenance");
 
   return (
     <div>
@@ -160,33 +130,18 @@ export function SourceCitations({
           return (
             <li key={c.label}>
               {c.contributorSlug ? (
-                (() => {
-                  const destination = sourceCitationContributorDestination(c.contributorSlug);
-                  if (!destination) {
-                    return <div className="px-2">{body}</div>;
-                  }
-                  return (
-                    <Link
-                      to={destination.to}
-                      params={destination.params}
-                      className="block rounded-md px-2 transition-colors duration-200 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-                      onClick={() =>
-                        trackEvent(
-                          sourceCitationEgressAnalyticsEvent(),
-                          sourceCitationEgressAnalyticsData("contributor-profile", surface),
-                        )
-                      }
-                    >
-                      {body}
-                    </Link>
-                  );
-                })()
+                <Link
+                  to="/contributors/$slug"
+                  params={{ slug: c.contributorSlug }}
+                  className="block rounded-md px-2 transition-colors duration-200 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                >
+                  {body}
+                </Link>
               ) : c.href ? (
                 <a
                   href={c.href}
                   target="_blank"
                   rel="noreferrer"
-                  onClick={() => onCitationOpen(c)}
                   className="block rounded-md px-2 transition-colors duration-200 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                 >
                   {body}
@@ -198,21 +153,13 @@ export function SourceCitations({
           );
         })}
       </ul>
-      {qualityDestination ? (
-        <Link
-          to={qualityDestination.to}
-          hash={qualityDestination.hash}
-          className="mt-2 inline-flex text-xs text-ink-muted hover:text-ink"
-          onClick={() =>
-            trackEvent(
-              sourceCitationEgressAnalyticsEvent(),
-              sourceCitationEgressAnalyticsData("quality-source-provenance", surface),
-            )
-          }
-        >
-          Source methodology →
-        </Link>
-      ) : null}
+      <Link
+        to="/quality"
+        hash="source-provenance"
+        className="mt-2 inline-flex text-xs text-ink-muted hover:text-ink"
+      >
+        Source methodology →
+      </Link>
     </div>
   );
 }

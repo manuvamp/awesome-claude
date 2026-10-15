@@ -469,10 +469,6 @@ describe("MCP config validator", () => {
             command: "docker",
             args: ["run", "ghcr.io/example/mcp:1.2.3"],
           },
-          dockerPinned: {
-            command: "docker",
-            args: ["run", "mcp-image@1.2.3"],
-          },
         },
       }),
     );
@@ -492,16 +488,11 @@ describe("MCP config validator", () => {
         expect.stringContaining(
           "windowsUvx: uvx runs unpinned package windows-python-mcp",
         ),
-        // docker `:tag` is not an npm @semver pin (isPinnedPackageSpec out of
-        // scope), so once packageRunnerName labels docker run it warns too.
-        expect.stringContaining(
-          "dockerTagged: docker run runs unpinned package ghcr.io/example/mcp:1.2.3",
-        ),
       ]),
     );
     expect(result.warnings.join("\n")).not.toContain("pinnedUvx");
     expect(result.warnings.join("\n")).not.toContain("pinnedPnpm");
-    expect(result.warnings.join("\n")).not.toContain("dockerPinned");
+    expect(result.warnings.join("\n")).not.toContain("dockerTagged");
   });
 
   it("wraps bare server objects and warns on placeholders", () => {

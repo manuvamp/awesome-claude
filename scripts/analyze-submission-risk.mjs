@@ -6,7 +6,11 @@ import {
   formatSubmissionRiskMarkdown,
 } from "@heyclaude/registry/submission-risk";
 
-import { argValue } from "./lib/cli-arg-value.mjs";
+function argValue(flag) {
+  const idx = process.argv.indexOf(flag);
+  if (idx < 0) return "";
+  return process.argv[idx + 1] ?? "";
+}
 
 function readJson(filePath, { fallback = null, required = false } = {}) {
   if (!filePath || !fs.existsSync(filePath)) {

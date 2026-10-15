@@ -1,26 +1,16 @@
+import { parseAbbreviatedCount } from "@heyclaude/registry/presentation";
+import {
+  parseGitHubRepoUrl as parseCanonicalGitHubRepoUrl,
+} from "@heyclaude/registry/source-repo";
+
 import { getEnvString } from "@/lib/cloudflare-env.server";
 import { chunk, inPlaceholders } from "@/lib/d1-batch";
 import { getSiteDb, type D1DatabaseLike } from "@/lib/db";
-import {
-  applySourceRepoSignal,
-  collectSourceRepos,
-  compareSourceRepoRefreshPriority,
-  normalizeSourceRepoSignalRow,
-  parseGitHubRepoUrl,
-  refreshLimit,
-  shouldRefreshSourceRepoSignal,
-  type SourceRepoSignal,
-  type SourceRepoSignalState,
-} from "@/lib/source-repo-signals-lib";
-import { fetchGitHubSourceSignal } from "@/lib/source-repo-signals-fetch-lib";
 
-export type { SourceRepoSignal, SourceRepoSignalState };
-export {
-  applySourceRepoSignal,
-  collectSourceRepos,
-  parseGitHubRepoUrl,
-} from "@/lib/source-repo-signals-lib";
-export { fetchGitHubSourceSignal } from "@/lib/source-repo-signals-fetch-lib";
+const GITHUB_API_VERSION = "2022-11-28";
+const REQUEST_TIMEOUT_MS = 5000;
+const DEFAULT_REFRESH_LIMIT = 25;
+const REFRESH_STALE_MS = 24 * 60 * 60 * 1000;
 
 type Fetcher = typeof fetch;
 
@@ -40,6 +30,21 @@ type EntryWithRepoStats = {
   };
 };
 
+export type SourceRepoSignal = {
+  repo: string;
+  stars: number | null;
+  forks: number | null;
+  repoUpdatedAt: string | null;
+  fetchedAt: string;
+  status: "ok" | "error";
+  lastError: string | null;
+};
+
+export type SourceRepoSignalState = {
+  available: boolean;
+  signals: Map<string, SourceRepoSignal>;
+};
+
 type SourceRepoSignalRow = {
   repo: string;
   stars: number | null;
@@ -49,6 +54,44 @@ type SourceRepoSignalRow = {
   status: "ok" | "error";
   last_error: string | null;
 };
+
+export function parseGitHubRepoUrl(value: unknown) {
+  // Delegate to the shared canonical parser (handles www., the scp/SSH short
+  // form, and the git+/git:// schemes). The source-signal cache keys repos
+  // case-insensitively, so lowercase the dedup key here.
+  const parsed = parseCanonicalGitHubRepoUrl(value);
+  if (!parsed) return null;
+
+  const { owner, repo } = parsed;
+  return { owner, repo, key: `${owner}/${repo}`.toLowerCase() };
+}
+
+function sourceRepoForEntry(entry: EntryWithRepoStats) {
+  return parseGitHubRepoUrl(entry.repoUrl || entry.repoStats?.url);
+}
+
+function normalizeSignalRow(row: SourceRepoSignalRow): SourceRepoSignal {
+  return {
+    repo: String(row.repo || "").toLowerCase(),
+    stars: typeof row.stars === "number" ? row.stars : null,
+    forks: typeof row.forks === "number" ? row.forks : null,
+    repoUpdatedAt: row.repo_updated_at || null,
+    fetchedAt: row.fetched_at,
+    status: row.status === "error" ? "error" : "ok",
+    lastError: row.last_error || null,
+  };
+}
+
+export function collectSourceRepos(entries: readonly EntryWithRepoStats[]) {
+  return [
+    ...new Set(
+      entries
+        .map(sourceRepoForEntry)
+        .filter((repo): repo is NonNullable<ReturnType<typeof sourceRepoForEntry>> => Boolean(repo))
+        .map((repo) => repo.key),
+    ),
+  ].sort();
+}
 
 export async function querySourceRepoSignals(db: D1DatabaseLike, repos: readonly string[]) {
   const uniqueRepos = [...new Set(repos.map((repo) => repo.toLowerCase()))];
@@ -67,7 +110,7 @@ export async function querySourceRepoSignals(db: D1DatabaseLike, repos: readonly
       .all<SourceRepoSignalRow>();
 
     for (const row of results || []) {
-      const signal = normalizeSourceRepoSignalRow(row);
+      const signal = normalizeSignalRow(row);
       if (signal.repo) signals.set(signal.repo, signal);
     }
   }
@@ -94,6 +137,54 @@ export async function readSourceRepoSignalState(
   }
 }
 
+function stripVolatileRepoStats<T extends EntryWithRepoStats>(entry: T): T {
+  const {
+    githubStars: _githubStars,
+    githubForks: _githubForks,
+    repoUpdatedAt: _repoUpdatedAt,
+    repoStats: _repoStats,
+    ...rest
+  } = entry;
+  return rest as T;
+}
+
+export function applySourceRepoSignal<T extends EntryWithRepoStats>(
+  entry: T,
+  state: SourceRepoSignalState,
+): T {
+  const repo = sourceRepoForEntry(entry);
+  if (!repo) return entry;
+  if (!state.available) return entry;
+
+  const signal = state.signals.get(repo.key);
+  if (!signal) return stripVolatileRepoStats(entry);
+
+  const hasSignal =
+    typeof signal.stars === "number" ||
+    typeof signal.forks === "number" ||
+    Boolean(signal.repoUpdatedAt);
+  if (!hasSignal) return stripVolatileRepoStats(entry);
+
+  const repoStats = {
+    ...(entry.repoStats ?? {}),
+    repository: entry.repoStats?.repository ?? repo.key,
+    url: entry.repoStats?.url ?? entry.repoUrl ?? `https://github.com/${repo.key}`,
+    appliesTo: entry.repoStats?.appliesTo ?? "listing_source_repo",
+    label: entry.repoStats?.label ?? "Source repo",
+    ...(typeof signal.stars === "number" ? { stars: signal.stars } : {}),
+    ...(typeof signal.forks === "number" ? { forks: signal.forks } : {}),
+    ...(signal.repoUpdatedAt ? { updatedAt: signal.repoUpdatedAt } : {}),
+  };
+
+  return {
+    ...entry,
+    githubStars: signal.stars,
+    githubForks: signal.forks,
+    repoUpdatedAt: signal.repoUpdatedAt,
+    repoStats,
+  };
+}
+
 export async function applySourceRepoSignals<T extends EntryWithRepoStats>(entries: readonly T[]) {
   const state = await readSourceRepoSignalState(entries);
   return entries.map((entry) => applySourceRepoSignal(entry, state));
@@ -103,6 +194,55 @@ export async function applySourceRepoSignalToEntry<T extends EntryWithRepoStats>
   if (!entry) return entry;
   const [withSignal] = await applySourceRepoSignals([entry]);
   return withSignal ?? entry;
+}
+
+async function fetchShieldsStars(repo: { owner: string; repo: string }, fetcher: Fetcher) {
+  try {
+    const response = await fetcher(
+      `https://img.shields.io/github/stars/${repo.owner}/${repo.repo}.json`,
+      { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    );
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { value?: string; message?: string };
+    const stars = parseAbbreviatedCount(payload.value ?? payload.message);
+    if (stars === null) return null;
+    return { stars, forks: null, repoUpdatedAt: null };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchGitHubSourceSignal(repoKey: string, fetcher: Fetcher = fetch) {
+  const [owner, repo] = repoKey.split("/");
+  if (!owner || !repo) throw new Error(`invalid_repo:${repoKey}`);
+
+  const headers: HeadersInit = {
+    accept: "application/vnd.github+json",
+    "user-agent": "heyclau.de-source-signals",
+    "x-github-api-version": GITHUB_API_VERSION,
+  };
+  // Registry entries control repo URLs, so do not attach the Worker GitHub
+  // token here. A broadly scoped token could otherwise turn this public signal
+  // refresh into an oracle for private repositories the token can access.
+  const response = await fetcher(`https://api.github.com/repos/${owner}/${repo}`, {
+    headers,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const fallback = await fetchShieldsStars({ owner, repo }, fetcher);
+    if (fallback) return fallback;
+    throw new Error(`github_api_${response.status}`);
+  }
+
+  const data = (await response.json()) as Record<string, unknown>;
+  if (data.private === true) throw new Error("github_api_private_repo");
+
+  return {
+    stars: typeof data.stargazers_count === "number" ? data.stargazers_count : null,
+    forks: typeof data.forks_count === "number" ? data.forks_count : null,
+    repoUpdatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+  };
 }
 
 export async function upsertSourceRepoSignalSuccess(
@@ -155,6 +295,19 @@ export async function upsertSourceRepoSignalFailure(
     .run();
 }
 
+function refreshLimit(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_REFRESH_LIMIT;
+  return Math.max(1, Math.min(100, Math.trunc(parsed)));
+}
+
+function shouldRefresh(signal: SourceRepoSignal | undefined, nowMs: number) {
+  if (!signal) return true;
+  if (signal.status === "error") return true;
+  const fetchedMs = Date.parse(signal.fetchedAt);
+  return !Number.isFinite(fetchedMs) || nowMs - fetchedMs > REFRESH_STALE_MS;
+}
+
 export async function refreshSourceRepoSignalsForEntries(
   entries: readonly EntryWithRepoStats[],
   options: {
@@ -172,23 +325,18 @@ export async function refreshSourceRepoSignalsForEntries(
   const now = options.now ?? new Date();
   const fetchedAt = now.toISOString();
   const work = repos
-    .filter((repo) => shouldRefreshSourceRepoSignal(existing.get(repo), now.getTime()))
-    .sort(
-      (a, b) =>
-        compareSourceRepoRefreshPriority(existing.get(a), existing.get(b)) || a.localeCompare(b),
-    )
+    .filter((repo) => shouldRefresh(existing.get(repo), now.getTime()))
     .slice(0, refreshLimit(options.limit ?? getEnvString("SOURCE_REPO_SIGNAL_REFRESH_LIMIT")));
 
   let refreshed = 0;
   let failed = 0;
   const fetcher = options.fetcher ?? fetch;
-  const githubToken = getEnvString("GITHUB_TOKEN");
 
   for (const batch of chunk(work, 4)) {
     await Promise.all(
       batch.map(async (repo) => {
         try {
-          const signal = await fetchGitHubSourceSignal(repo, fetcher, { githubToken });
+          const signal = await fetchGitHubSourceSignal(repo, fetcher);
           await upsertSourceRepoSignalSuccess(db, repo, signal, fetchedAt);
           refreshed += 1;
         } catch (error) {

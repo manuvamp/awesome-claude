@@ -3,12 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCompact, timeAgo } from "@/lib/format";
-import { trackEvent } from "@/lib/analytics";
-import {
-  liveVersionBadgeAnalyticsData,
-  liveVersionBadgeAnalyticsEvent,
-  type LiveVersionBadgeSurface,
-} from "@/lib/live-version-cta-events";
 
 interface NpmMeta {
   name: string;
@@ -27,9 +21,6 @@ async function fetchNpm(pkg: string): Promise<NpmMeta> {
  * Compact live version chip backed by /api/public/npm proxy.
  * Falls back to `fallbackVersion` and `fallbackUpdatedAt` while loading or
  * if the proxy fails. Always renders something — never blank.
- *
- * `asLink` is opt-in so callers that already wrap the badge in a `<Link>`
- * (e.g. home hero) do not nest anchors.
  */
 export function LiveVersionBadge({
   pkg,
@@ -37,16 +28,12 @@ export function LiveVersionBadge({
   fallbackUpdatedAt,
   showDownloads = true,
   className,
-  asLink = false,
-  analyticsSurface = "integration-card",
 }: {
   pkg: string;
   fallbackVersion?: string;
   fallbackUpdatedAt?: string;
   showDownloads?: boolean;
   className?: string;
-  asLink?: boolean;
-  analyticsSurface?: LiveVersionBadgeSurface;
 }) {
   const { data, isError } = useQuery({
     queryKey: ["npm", pkg],
@@ -61,8 +48,14 @@ export function LiveVersionBadge({
   const downloads = data?.weeklyDownloads;
   const live = !!data && !isError;
 
-  const body = (
-    <>
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-0.5 font-mono text-[11px] text-ink-muted",
+        className,
+      )}
+      title={live ? `Latest on npm · published ${timeAgo(updatedAt)}` : "Last known release"}
+    >
       <Package className="h-3 w-3" aria-hidden />
       {version ? <span className="text-ink">v{version.replace(/^v/, "")}</span> : <span>—</span>}
       {showDownloads && downloads != null && (
@@ -78,38 +71,6 @@ export function LiveVersionBadge({
           title="Live from npm registry"
         />
       )}
-    </>
-  );
-
-  const classes = cn(
-    "inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-0.5 font-mono text-[11px] text-ink-muted",
-    className,
-  );
-  const title = live ? `Latest on npm · published ${timeAgo(updatedAt)}` : "Last known release";
-
-  if (asLink) {
-    return (
-      <a
-        href={`https://www.npmjs.com/package/${encodeURIComponent(pkg)}`}
-        target="_blank"
-        rel="noreferrer"
-        onClick={() =>
-          trackEvent(
-            liveVersionBadgeAnalyticsEvent(),
-            liveVersionBadgeAnalyticsData(analyticsSurface, live),
-          )
-        }
-        className={cn(classes, "transition-colors hover:border-ink/20 hover:text-ink")}
-        title={title}
-      >
-        {body}
-      </a>
-    );
-  }
-
-  return (
-    <span className={classes} title={title}>
-      {body}
     </span>
   );
 }

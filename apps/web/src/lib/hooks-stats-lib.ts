@@ -148,11 +148,8 @@ export function buildHooksReport(entries: ReadonlyArray<Entry>, asOf: string): R
   const total = hooks.length;
 
   const events = hookEventDistribution(hooks);
-  const withBoth = hooks.filter(
-    (h) =>
-      hasNotes(h.safetyNotesList ?? h.safetyNotes) &&
-      hasNotes(h.privacyNotesList ?? h.privacyNotes),
-  ).length;
+  const withSafety = hooks.filter((h) => hasNotes(h.safetyNotesList ?? h.safetyNotes)).length;
+  const withPrivacy = hooks.filter((h) => hasNotes(h.privacyNotesList ?? h.privacyNotes)).length;
   const simple = hooks.filter(
     (h) => typeof h.difficultyScore === "number" && h.difficultyScore <= 2,
   ).length;
@@ -241,7 +238,7 @@ export function buildHooksReport(entries: ReadonlyArray<Entry>, asOf: string): R
       {
         key: "safety-privacy",
         label: "Disclose safety & privacy",
-        value: pctOf(withBoth, total),
+        value: Math.min(pctOf(withSafety, total), pctOf(withPrivacy, total)),
         hint: "%",
       },
       {

@@ -23,7 +23,6 @@ import {
 } from "./content-schema.js";
 import { buildBrandAssetMetadata } from "./brand-assets.js";
 import { parseGitHubRepoUrl } from "./source-repo.js";
-import { isPublicHttpUrl } from "./source-url.js";
 import { parseSafeFrontmatter } from "./frontmatter.js";
 
 export const DEFAULT_DIRECTORY_REPO_URL =
@@ -412,13 +411,7 @@ export function buildContentEntryFromMdx(params) {
     codeBlocks,
     filePath: path.relative(repoRoot, filePath).replaceAll(path.sep, "/"),
     githubUrl: buildGitHubUrl(filePath, repoRoot),
-    // GitHub repos get the canonical owner/repo-derived URL; any other public
-    // http(s) repo (GitLab, sourcehut, self-hosted) keeps its validated raw URL
-    // instead of being discarded to null. isPublicHttpUrl mirrors the schema's
-    // own repoUrl validator, and the `repoUrl &&` guard keeps an absent repo
-    // null (isPublicHttpUrl treats an empty string as valid-optional).
-    repoUrl:
-      githubRepo?.url ?? (repoUrl && isPublicHttpUrl(repoUrl) ? repoUrl : null),
+    repoUrl: githubRepo?.url ?? null,
     githubStars: null,
     githubForks: null,
     repoUpdatedAt: null,

@@ -2147,10 +2147,9 @@ describe("non-UI branch matrix", () => {
     expect(
       normalizeMcpServerConfig({ command: "node", args: ["server.js"] }),
     ).toMatchObject({ type: "stdio", command: "node" });
-    // Valid metadata, but outside the npx/uvx one-click allowlist.
     expect(
       mcpInstallTargetsForConfig({ command: "node", args: ["server.js"] }),
-    ).toEqual([]);
+    ).toEqual(["claude-code", "codex", "cursor", "antigravity"]);
 
     const remoteWithHeaders = {
       type: "http",
@@ -2196,8 +2195,6 @@ describe("non-UI branch matrix", () => {
         headers: { Authorization: { secret: true } },
       }),
     ).toBeNull();
-    // Multi-server maps install their first usable server rather than
-    // resolving to nothing at all.
     expect(
       extractMcpServerConfig({
         mcpServers: {
@@ -2205,7 +2202,7 @@ describe("non-UI branch matrix", () => {
           two: { command: "node" },
         },
       }),
-    ).toEqual({ name: "one", config: { command: "node", type: "stdio" } });
+    ).toBeNull();
     expect(() => extractMcpServerConfig("not json")).toThrow();
     expect(formatMcpConfigSnippet("", { command: "node" })).toContain(
       '"heyclaude-mcp"',

@@ -11,10 +11,7 @@ describe("registry provenance", () => {
     const entry = buildContentEntryFromMdx({
       category: "hooks",
       fileName: "documentation-only-hook.mdx",
-      filePath: path.join(
-        repoRoot,
-        "content/hooks/documentation-only-hook.mdx",
-      ),
+      filePath: path.join(repoRoot, "content/hooks/documentation-only-hook.mdx"),
       repoRoot,
       contentRoot: path.join(repoRoot, "content"),
       source: `---
@@ -35,12 +32,6 @@ Use this hook after reviewing the documentation.`,
     );
 
     const [plugin] = buildPluginExportFeed([entry]).plugins;
-    // The plugin source must not surface the always-present self-referential
-    // directory link; with no real repoUrl it falls back to the real external
-    // documentationUrl instead.
-    expect(plugin.sourceUrl).not.toBe(entry.githubUrl);
-    expect(plugin.sourceUrl).toBe(
-      "https://github.com/example/documentation-project",
-    );
+    expect(plugin.sourceUrl).toBe(entry.githubUrl);
   });
 });

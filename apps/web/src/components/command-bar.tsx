@@ -21,21 +21,7 @@ import { CategoryPill, Kbd, TrustBadge } from "./badges";
 import { useTheme } from "@/lib/theme";
 import { useShortcuts } from "./shortcuts-dialog";
 import { cn } from "@/lib/utils";
-import { filterCommandActions } from "@/lib/command-bar-actions-lib";
 import { trackEvent } from "@/lib/analytics";
-import {
-  commandBarActionDestination,
-  commandBarActionSelectAnalyticsData,
-  commandBarActionSelectAnalyticsEvent,
-  commandBarEntryDestination,
-  commandBarResultSelectAnalyticsData,
-  commandBarResultSelectAnalyticsEvent,
-  commandBarScopeSelectAnalyticsData,
-  commandBarScopeSelectAnalyticsEvent,
-  commandBarSearchDestination,
-  commandBarSearchSubmitAnalyticsData,
-  commandBarSearchSubmitAnalyticsEvent,
-} from "@/lib/command-bar-cta-events";
 
 const EXAMPLES = [
   "postgres MCP",
@@ -80,9 +66,9 @@ export function CommandBar({
 
   // Lazy-load the in-memory search index (and the registry dataset it pulls in) only when the
   // bar is opened or typed into, so the ~1 MB dataset stays out of the universal client bundle.
-  const [searchFn, setSearchFn] = React.useState<(typeof import("@/data/search"))["search"] | null>(
-    null,
-  );
+  const [searchFn, setSearchFn] = React.useState<
+    (typeof import("@/data/search"))["search"] | null
+  >(null);
   React.useEffect(() => {
     if ((!open && !q) || searchFn) return;
     let cancelled = false;
@@ -110,74 +96,69 @@ export function CommandBar({
   );
 
   const actions = React.useMemo<ActionItem[]>(() => {
-    const nav = (actionId: string) => {
-      const destination = commandBarActionDestination(actionId);
-      if (!destination) return;
-      navigate({ to: destination.to });
-    };
     const all: ActionItem[] = [
       {
         id: "go-browse",
         label: "Browse all resources",
         hint: "/browse",
         Icon: Compass,
-        run: () => nav("go-browse"),
+        run: () => navigate({ to: "/browse" }),
       },
       {
         id: "go-trending",
         label: "Trending this week",
         hint: "/trending",
         Icon: Flame,
-        run: () => nav("go-trending"),
+        run: () => navigate({ to: "/trending" }),
       },
       {
         id: "go-ecosystem",
         label: "Ecosystem & integrations",
         hint: "/ecosystem",
         Icon: GitBranch,
-        run: () => nav("go-ecosystem"),
+        run: () => navigate({ to: "/ecosystem" }),
       },
       {
         id: "go-quality",
         label: "Registry quality",
         hint: "/quality",
         Icon: ShieldCheck,
-        run: () => nav("go-quality"),
+        run: () => navigate({ to: "/quality" }),
       },
       {
         id: "go-best",
         label: "Best of HeyClaude",
         hint: "/best",
         Icon: Sparkles,
-        run: () => nav("go-best"),
+        run: () => navigate({ to: "/best" }),
       },
       {
         id: "go-submit",
         label: "Submit a resource",
         hint: "/submit",
         Icon: Send,
-        run: () => nav("go-submit"),
+        run: () => navigate({ to: "/submit" }),
       },
       {
         id: "go-feeds",
         label: "RSS feeds & email subscriptions",
         hint: "/feeds",
         Icon: GitBranch,
-        run: () => nav("go-feeds"),
+        run: () => navigate({ to: "/feeds" }),
       },
       {
         id: "go-subscriptions",
         label: "Manage subscriptions",
         hint: "/subscriptions",
         Icon: Sparkles,
-        run: () => nav("go-subscriptions"),
+        run: () => navigate({ to: "/subscriptions" }),
       },
       {
         id: "go-saved",
         label: "Saved searches",
         hint: "/browse",
         Icon: Sparkles,
-        run: () => nav("go-saved"),
+        run: () => navigate({ to: "/browse" }),
       },
       { id: "toggle-theme", label: "Toggle theme", Icon: Sun, run: () => toggleTheme() },
       {
@@ -188,7 +169,9 @@ export function CommandBar({
         run: () => shortcuts?.open(),
       },
     ];
-    return filterCommandActions(all, q);
+    if (!q.trim()) return all;
+    const needle = q.toLowerCase();
+    return all.filter((a) => a.label.toLowerCase().includes(needle)).slice(0, 4);
   }, [q, navigate, toggleTheme, shortcuts]);
 
   // Build a flat option list (results first, then actions) for keyboard nav.
@@ -206,33 +189,11 @@ export function CommandBar({
   }, [q]);
 
   const submit = () => {
-    const destination = commandBarSearchDestination(q);
-    if (!destination) return;
-    trackEvent(
-      commandBarSearchSubmitAnalyticsEvent(),
-      commandBarSearchSubmitAnalyticsData(queryLength, results.length, quickCat),
-    );
-    navigate({ to: destination.to, search: destination.search });
+    const query = q.trim();
+    if (!query) return;
+    trackEvent("search", { q: query.slice(0, 64) });
+    navigate({ to: "/browse", search: { q } });
   };
-
-  const queryLength = q.trim().length;
-
-  const trackResultSelect = React.useCallback(
-    (category: string, slug: string, resultIndex: number) => {
-      trackEvent(
-        commandBarResultSelectAnalyticsEvent(),
-        commandBarResultSelectAnalyticsData(
-          category,
-          slug,
-          resultIndex,
-          results.length,
-          quickCat,
-          queryLength,
-        ),
-      );
-    },
-    [queryLength, quickCat, results.length],
-  );
 
   const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     const next = e.relatedTarget as Node | null;
@@ -244,15 +205,11 @@ export function CommandBar({
     const opt = options[i];
     if (!opt) return submit();
     if (opt.kind === "result") {
-      const destination = commandBarEntryDestination(opt.r.category, opt.r.slug);
-      if (!destination) return submit();
-      trackResultSelect(opt.r.category, opt.r.slug, i);
-      navigate({ to: destination.to, params: destination.params });
+      navigate({
+        to: "/entry/$category/$slug",
+        params: { category: opt.r.category, slug: opt.r.slug },
+      });
     } else {
-      trackEvent(
-        commandBarActionSelectAnalyticsEvent(),
-        commandBarActionSelectAnalyticsData(opt.a.id, queryLength, results.length),
-      );
       opt.a.run();
     }
     setOpen(false);
@@ -323,9 +280,7 @@ export function CommandBar({
           }}
           placeholder={`Search Claude workflows — try "${EXAMPLES[placeholderIdx]}"`}
           className={cn(
-            // min-w-0: an <input> carries a default intrinsic width (~200px), so
-            // without this the header row cannot shrink below it and overflows.
-            "min-w-0 flex-1 bg-transparent text-ink placeholder:text-ink-subtle focus:outline-none",
+            "flex-1 bg-transparent text-ink placeholder:text-ink-subtle focus:outline-none",
             size === "lg" ? "text-base" : "text-sm",
           )}
         />
@@ -344,11 +299,7 @@ export function CommandBar({
       </span>
 
       {showPanel && (
-        // Anchored to the input's right edge and sized independently of it:
-        // `min-w-full` keeps the panel flush with a wide input (home hero),
-        // while the fixed width lets it grow leftward out of a narrow one
-        // (header) instead of inheriting a ~200px column.
-        <div className="absolute right-0 top-full z-50 mt-2 w-[min(34rem,calc(100vw-2rem))] min-w-full overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-surface-2 px-3 py-2">
             <span className="eyebrow mr-1">Scope</span>
             {[
@@ -363,17 +314,8 @@ export function CommandBar({
               <button
                 key={c.id || "all"}
                 type="button"
-                // Combobox keeps focus on the input; these are mouse/pointer
-                // affordances activated via aria-activedescendant + Enter (#5677).
-                tabIndex={-1}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  if (quickCat !== c.id) {
-                    trackEvent(
-                      commandBarScopeSelectAnalyticsEvent(),
-                      commandBarScopeSelectAnalyticsData(c.id, queryLength),
-                    );
-                  }
                   setQuickCat(c.id);
                 }}
                 className={cn(
@@ -388,16 +330,11 @@ export function CommandBar({
             ))}
           </div>
 
-          {/*
-            overflow-x-hidden is load-bearing: with only `overflow-y-auto`, CSS
-            computes the x axis to `auto` too, so any over-wide row silently
-            turns the list into a horizontal scroller.
-          */}
           <ul
             id={listboxId}
             role="listbox"
             aria-label="Search results and actions"
-            className="max-h-96 overflow-y-auto overflow-x-hidden py-1"
+            className="max-h-96 overflow-y-auto py-1"
           >
             {results.length > 0 && (
               <li
@@ -408,8 +345,6 @@ export function CommandBar({
               </li>
             )}
             {results.map((r, i) => {
-              const destination = commandBarEntryDestination(r.category, r.slug);
-              if (!destination) return null;
               const hasSafety = Boolean(r.safetyNotes);
               const hasPrivacy = Boolean(r.privacyNotes);
               const installable = Boolean(r.installCommand);
@@ -422,35 +357,29 @@ export function CommandBar({
                   aria-selected={active === i}
                 >
                   <Link
-                    to={destination.to}
-                    params={destination.params}
+                    to="/entry/$category/$slug"
+                    params={{ category: r.category, slug: r.slug }}
                     onMouseEnter={() => setActive(i)}
-                    onClick={() => trackResultSelect(r.category, r.slug, i)}
                     className={cn(
                       "flex flex-col gap-1 px-4 py-2 text-sm focus-visible:outline-none",
                       active === i && "bg-surface-2",
                     )}
                   >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <CategoryPill className="shrink-0">{r.category}</CategoryPill>
-                      <span className="min-w-0 flex-1 truncate font-medium text-ink">
-                        {r.title}
-                      </span>
-                      <TrustBadge level={r.trust} className="shrink-0" />
+                    <div className="flex items-center gap-3">
+                      <CategoryPill>{r.category}</CategoryPill>
+                      <span className="truncate font-medium text-ink">{r.title}</span>
+                      <TrustBadge level={r.trust} />
                     </div>
-                    <div className="flex min-w-0 items-center gap-2 pl-1 text-[11px] text-ink-muted">
-                      <span className="line-clamp-1 min-w-0 flex-1">{r.description}</span>
+                    <div className="flex items-center gap-3 pl-1 text-[11px] text-ink-muted">
+                      <span className="line-clamp-1 flex-1">{r.description}</span>
                       {installable && (
-                        <span
-                          className="inline-flex shrink-0 items-center gap-1"
-                          title="Installable"
-                        >
+                        <span className="inline-flex items-center gap-1" title="Installable">
                           <TerminalSquare className="h-3 w-3" aria-hidden /> install
                         </span>
                       )}
                       <span
                         className={cn(
-                          "inline-flex shrink-0 items-center gap-1",
+                          "inline-flex items-center gap-1",
                           hasSafety ? "text-ink-muted" : "text-ink-subtle",
                         )}
                         title={hasSafety ? "Safety notes present" : "No safety notes"}
@@ -459,7 +388,7 @@ export function CommandBar({
                       </span>
                       <span
                         className={cn(
-                          "inline-flex shrink-0 items-center gap-1",
+                          "inline-flex items-center gap-1",
                           hasPrivacy ? "text-ink-muted" : "text-ink-subtle",
                         )}
                         title={hasPrivacy ? "Privacy notes present" : "No privacy notes"}
@@ -468,7 +397,7 @@ export function CommandBar({
                       </span>
                       {stars !== null && (
                         <span
-                          className="inline-flex shrink-0 items-center gap-1 tabular-nums"
+                          className="inline-flex items-center gap-1 tabular-nums"
                           title={`${stars.toLocaleString()} source repository stars`}
                         >
                           <Star className="h-3 w-3" aria-hidden />
@@ -500,7 +429,6 @@ export function CommandBar({
                 >
                   <button
                     type="button"
-                    tabIndex={-1}
                     onMouseEnter={() => setActive(i)}
                     onMouseDown={(e) => {
                       e.preventDefault();
@@ -526,7 +454,6 @@ export function CommandBar({
           {q.trim() && (
             <button
               type="button"
-              tabIndex={-1}
               onMouseDown={(e) => {
                 e.preventDefault();
                 submit();

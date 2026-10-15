@@ -3,14 +3,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { BriefSections, type BriefSectionsData } from "@/components/brief-sections";
-import { trackEvent } from "@/lib/analytics";
-import {
-  briefIssueHubAnalyticsData,
-  briefIssueHubAnalyticsEvent,
-  briefIssueHubDestination,
-} from "@/lib/brief-entry-cta-events";
-import { parseBriefNumber } from "@/lib/brief-number-parse-lib";
-import { breadcrumbScript } from "@/lib/seo-jsonld";
 import { absoluteUrl } from "@/lib/seo";
 
 const loadBriefIssue = createServerFn({ method: "GET" })
@@ -36,9 +28,13 @@ const loadBriefIssue = createServerFn({ method: "GET" })
     };
   });
 
+function parseNumber(value: string): number {
+  return /^\d+$/.test(value) ? Number(value) : NaN;
+}
+
 export const Route = createFileRoute("/brief/$number")({
   loader: async ({ params }) => {
-    const number = parseBriefNumber(params.number);
+    const number = parseNumber(params.number);
     if (!Number.isInteger(number)) throw notFound();
     const issue = await loadBriefIssue({ data: { number } });
     if (!issue.found) throw notFound();
@@ -58,43 +54,18 @@ export const Route = createFileRoute("/brief/$number")({
         { property: "og:type", content: "article" },
       ],
       links: [{ rel: "canonical", href: url }],
-      scripts: [
-        breadcrumbScript([
-          { name: "Weekly Brief", path: "/brief" },
-          { name: `Issue #${loaderData.number}`, path: `/brief/${loaderData.number}` },
-        ]),
-      ],
     };
   },
   component: BriefIssuePage,
-  notFoundComponent: BriefIssueNotFound,
-});
-
-function BriefIssueNotFound() {
-  return (
+  notFoundComponent: () => (
     <div className="mx-auto max-w-2xl px-6 py-24 text-center">
       <h1 className="h-display-2 text-ink">Issue not found</h1>
-      {(() => {
-        const destination = briefIssueHubDestination("brief");
-        if (!destination) return null;
-        return (
-          <Link
-            to={destination.to}
-            onClick={() =>
-              trackEvent(
-                briefIssueHubAnalyticsEvent(),
-                briefIssueHubAnalyticsData(null, "not-found"),
-              )
-            }
-            className="mt-4 inline-block text-ink-muted hover:text-ink"
-          >
-            ← All Weekly Brief issues
-          </Link>
-        );
-      })()}
+      <Link to="/brief" className="mt-4 inline-block text-ink-muted hover:text-ink">
+        ← All Weekly Brief issues
+      </Link>
     </div>
-  );
-}
+  ),
+});
 
 function BriefIssuePage() {
   const issue = Route.useLoaderData();
@@ -102,18 +73,7 @@ function BriefIssuePage() {
     <div className="mx-auto max-w-[1100px] px-4 py-10 sm:px-6">
       <Breadcrumbs
         home
-        items={[
-          {
-            label: "Weekly Brief",
-            to: briefIssueHubDestination("brief")?.to,
-            onClick: () =>
-              trackEvent(
-                briefIssueHubAnalyticsEvent(),
-                briefIssueHubAnalyticsData(issue.number, "breadcrumb"),
-              ),
-          },
-          { label: `Issue #${issue.number}` },
-        ]}
+        items={[{ label: "Weekly Brief", to: "/brief" }, { label: `Issue #${issue.number}` }]}
       />
       <header className="mt-6 max-w-3xl">
         <div className="eyebrow text-ink-subtle">
@@ -131,7 +91,7 @@ function BriefIssuePage() {
         </div>
       ) : null}
       <div className="mt-8">
-        <BriefSections sections={issue.found ? issue.sections : {}} issueNumber={issue.number} />
+        <BriefSections sections={issue.found ? issue.sections : {}} />
       </div>
     </div>
   );

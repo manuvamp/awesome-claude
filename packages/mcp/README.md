@@ -11,7 +11,7 @@
   <a href="https://github.com/JSONbored/awesome-claude">GitHub</a> •
   <a href="https://www.npmjs.com/package/@heyclaude/mcp">npm</a> •
   <a href="https://heyclau.de/api/mcp">MCP endpoint</a> •
-  <a href="https://github.com/JSONbored/awesome-claude/releases/tag/mcp-v0.14.9">v0.4.0 release</a><!-- x-release-please-version -->
+  <a href="https://github.com/JSONbored/awesome-claude/releases/tag/mcp-v0.8.0">v0.4.0 release</a><!-- x-release-please-version -->
 </p>
 
 Read-only Model Context Protocol server for the HeyClaude registry.
@@ -34,10 +34,8 @@ strict request validation, a 64 KiB body limit, and a dedicated Cloudflare
   the best-match entries for a plain-language task, each with why it fits, a
   trust summary, safety/privacy notes, and an inline install block, plus a
   `topPick` and consolidated `installPlan`.
-- `registry.info` - fetch package version, registry generation, tool list,
+- `server.info` - fetch package version, registry generation, tool list,
   public access policy, and rate-limit metadata.
-- `registry.plan` - assemble a workflow toolbox for a stated goal, returning
-  the entries that fit it with a consolidated install plan.
 - `registry.list` - browse entries with bounded pagination and optional
   category, platform, tag, and query filters.
 - `registry.updates` - list recently added or upstream-updated entries from
@@ -64,7 +62,7 @@ strict request validation, a 64 KiB body limit, and a dedicated Cloudflare
   guidance.
 - `install.adapter` - fetch generated adapter content, currently Cursor
   rule adapters for skill packages.
-- `registry.feeds` - discover public JSON, RSS, Atom, and platform
+- `feeds.list` - discover public JSON, RSS, Atom, and platform
   feeds.
 - `submission.schema` - fetch category submission fields for PR-first
   intake.
@@ -100,9 +98,7 @@ strict request validation, a 64 KiB body limit, and a dedicated Cloudflare
 
 The server also exposes read-only MCP resources:
 
-- `heyclaude://registry/recent`
-- `heyclaude://registry/trending`
-- `heyclaude://jobs/active`
+- `heyclaude://feeds/directory`
 - `heyclaude://category/{category}`
 - `heyclaude://entry/{category}/{slug}`
 

@@ -22,72 +22,41 @@ artifact directory.
 
 ## Tools
 
-These names come from `packages/mcp/src/registry-tools-lib.js`
-(`READ_ONLY_TOOL_NAMES` / `TOOL_DEFINITIONS`), which is the source of truth.
-
-### registry
-
-- `registry.search`
-- `registry.plan`
-- `registry.recommend`
-- `registry.info`
-- `registry.list`
-- `registry.updates`
-- `registry.stats`
-- `registry.feeds`
-
-### entry
-
-- `entry.related`
-- `entry.detail`
-- `entry.asset`
-- `entry.compare`
-- `entry.trust`
-- `entry.safety`
-- `entry.coverage`
-
-### install
-
-- `install.setup`
-- `install.compatibility`
-- `install.guidance`
-- `install.adapter`
-
-### submission
-
-- `submission.schema`
-- `submission.validate`
-- `submission.duplicates`
-- `submission.urls`
-- `submission.guidance`
-- `submission.prepare`
-- `submission.examples`
-- `submission.review`
-- `submission.policy`
+- `search_registry`
+- `server_info`
+- `list_category_entries`
+- `get_recent_updates`
+- `get_related_entries`
+- `get_entry_detail`
+- `get_copyable_asset`
+- `compare_entries`
+- `get_registry_stats`
+- `get_client_setup`
+- `get_compatibility`
+- `get_install_guidance`
+- `get_platform_adapter`
+- `list_distribution_feeds`
+- `get_submission_schema`
+- `validate_submission_draft`
+- `search_duplicate_entries`
+- `build_submission_urls`
+- `get_category_submission_guidance`
+- `prepare_submission_draft`
+- `get_submission_examples`
+- `review_submission_draft`
 
 ## Resources
 
-From `packages/mcp/src/registry-resource-metadata-lib.js`.
-
-Discovery resources:
-
-- `heyclaude://registry/recent`
-- `heyclaude://registry/trending`
-- `heyclaude://jobs/active`
-
-Resource templates:
-
-- `heyclaude://entry/{category}/{slug}`
+- `heyclaude://feeds/directory`
 - `heyclaude://category/{category}`
+- `heyclaude://entry/{category}/{slug}`
 
 ## Prompts
 
-From `packages/mcp/src/registry-prompts-lib.js`.
-
-- `asset.find`
-- `submission.prepare`
-- `submission.review`
-- `install.asset`
+- `find_best_asset`
+- `prepare_submission`
+- `review_submission_before_pr`
+- `install_asset_safely`
 
 ## Access and rate limits
 

@@ -7,23 +7,7 @@ import { LiveVersionBadge } from "@/components/live-version-badge";
 import { CopyButton } from "@/components/copy-button";
 import { absoluteUrl } from "@/lib/seo";
 import { stringifyJsonLd } from "@/lib/json-ld";
-import { breadcrumbListJsonLd } from "@/lib/breadcrumb-jsonld-lib";
-import { integrationAppJsonLd } from "@/lib/integration-app-jsonld-lib";
 import { ogImageUrl } from "@/lib/og-image";
-import { ogImageMetaTags } from "@/lib/og-meta-lib";
-import { trackEvent } from "@/lib/analytics";
-import {
-  integrationsDetailActionAnalyticsData,
-  integrationsDetailActionAnalyticsEvent,
-  integrationsDetailIndexAnalyticsData,
-  integrationsDetailIndexAnalyticsEvent,
-  integrationsDetailInstallCopyAnalyticsData,
-  integrationsDetailInstallCopyAnalyticsEvent,
-  integrationsDetailRelatedAnalyticsData,
-  integrationsDetailRelatedAnalyticsEvent,
-  integrationsDetailIndexDestination,
-  integrationsDetailRelatedDestination,
-} from "@/lib/integrations-hub-cta-events";
 
 export const Route = createFileRoute("/integrations/$slug")({
   loader: ({ params }) => {
@@ -37,15 +21,29 @@ export const Route = createFileRoute("/integrations/$slug")({
     const url = absoluteUrl(`/integrations/${params.slug}`);
     const description = it.tagline;
     const ogImage = ogImageUrl({ title: it.name, eyebrow: "Integration", description });
-    const app = integrationAppJsonLd(
-      { name: it.name, description, version: it.version },
+    const app = {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: it.name,
+      description,
       url,
-      absoluteUrl,
-    );
-    const breadcrumbs = breadcrumbListJsonLd([
-      { name: "Integrations", item: absoluteUrl("/integrations") },
-      { name: it.name, item: url },
-    ]);
+      applicationCategory: "DeveloperApplication",
+      ...(it.version ? { softwareVersion: it.version } : {}),
+      publisher: { "@type": "Organization", name: "HeyClaude", url: absoluteUrl("/") },
+    };
+    const breadcrumbs = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        {
+          "@type": "ListItem",
+          position: 1,
+          name: "Integrations",
+          item: absoluteUrl("/integrations"),
+        },
+        { "@type": "ListItem", position: 2, name: it.name, item: url },
+      ],
+    };
     return {
       meta: [
         { title: `${it.name} — HeyClaude integration` },
@@ -53,7 +51,13 @@ export const Route = createFileRoute("/integrations/$slug")({
         { property: "og:title", content: `${it.name} — HeyClaude` },
         { property: "og:description", content: description },
         { property: "og:url", content: url },
-        ...ogImageMetaTags(ogImage, "website"),
+        { property: "og:image", content: ogImage },
+        { property: "og:image:type", content: "image/png" },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { property: "og:type", content: "website" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: ogImage },
       ],
       links: [{ rel: "canonical", href: url }],
       scripts: [
@@ -72,24 +76,9 @@ function IntegrationDetail() {
   return (
     <div className="mx-auto max-w-[1100px] px-4 py-10 sm:px-6">
       <nav className="text-xs text-ink-muted">
-        {(() => {
-          const destination = integrationsDetailIndexDestination("integrations");
-          if (!destination) return <span className="hover:text-ink">Integrations</span>;
-          return (
-            <Link
-              to={destination.to}
-              onClick={() =>
-                trackEvent(
-                  integrationsDetailIndexAnalyticsEvent(),
-                  integrationsDetailIndexAnalyticsData(integration.slug, related.length),
-                )
-              }
-              className="hover:text-ink"
-            >
-              Integrations
-            </Link>
-          );
-        })()}
+        <Link to="/integrations" className="hover:text-ink">
+          Integrations
+        </Link>
         <span className="mx-1.5">/</span>
         <span className="text-ink">{integration.slug}</span>
       </nav>
@@ -107,17 +96,6 @@ function IntegrationDetail() {
               href={integration.primaryAction.href}
               target="_blank"
               rel="noreferrer"
-              onClick={() =>
-                trackEvent(
-                  integrationsDetailActionAnalyticsEvent(),
-                  integrationsDetailActionAnalyticsData(
-                    integration.slug,
-                    "primary",
-                    integration.status,
-                    integration.kind,
-                  ),
-                )
-              }
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-3 text-sm font-medium text-background hover:bg-ink/90"
             >
               {integration.primaryAction.label} <ArrowUpRight className="h-3.5 w-3.5" />
@@ -127,17 +105,6 @@ function IntegrationDetail() {
                 href={integration.secondaryAction.href}
                 target="_blank"
                 rel="noreferrer"
-                onClick={() =>
-                  trackEvent(
-                    integrationsDetailActionAnalyticsEvent(),
-                    integrationsDetailActionAnalyticsData(
-                      integration.slug,
-                      "secondary",
-                      integration.status,
-                      integration.kind,
-                    ),
-                  )
-                }
                 className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-sm text-ink hover:bg-surface-2"
               >
                 {integration.secondaryAction.label}
@@ -152,8 +119,6 @@ function IntegrationDetail() {
                 pkg={integration.npmPackage}
                 fallbackVersion={integration.version}
                 fallbackUpdatedAt={integration.updatedAt}
-                asLink
-                analyticsSurface="integrations-detail"
               />
             </div>
           ) : null}
@@ -180,30 +145,17 @@ function IntegrationDetail() {
           {integration.install && integration.install.length > 0 && (
             <Block title="Install">
               <div className="space-y-3">
-                {integration.install.map(
-                  (i: { client: string; snippet: string }, installIndex: number) => (
-                    <div key={i.client} className="rounded-md border border-border bg-surface">
-                      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-                        <span className="text-xs font-medium text-ink">{i.client}</span>
-                        <CopyButton
-                          value={i.snippet}
-                          label="Copy"
-                          event={integrationsDetailInstallCopyAnalyticsEvent()}
-                          eventData={integrationsDetailInstallCopyAnalyticsData(
-                            integration.slug,
-                            installIndex,
-                            integration.install!.length,
-                            integration.status,
-                            integration.kind,
-                          )}
-                        />
-                      </div>
-                      <pre className="overflow-auto p-3 font-mono text-[11px] text-ink">
-                        <code>{i.snippet}</code>
-                      </pre>
+                {integration.install.map((i: { client: string; snippet: string }) => (
+                  <div key={i.client} className="rounded-md border border-border bg-surface">
+                    <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+                      <span className="text-xs font-medium text-ink">{i.client}</span>
+                      <CopyButton value={i.snippet} label="Copy" />
                     </div>
-                  ),
-                )}
+                    <pre className="overflow-auto p-3 font-mono text-[11px] text-ink">
+                      <code>{i.snippet}</code>
+                    </pre>
+                  </div>
+                ))}
               </div>
             </Block>
           )}
@@ -224,24 +176,8 @@ function IntegrationDetail() {
           <div>
             <div className="eyebrow mb-2">Related</div>
             <div className="space-y-3">
-              {related.map((r, rowIndex) => (
-                <IntegrationCard
-                  key={r.slug}
-                  integration={r}
-                  compact
-                  linkDestination={integrationsDetailRelatedDestination(r.slug)}
-                  onNavigate={() =>
-                    trackEvent(
-                      integrationsDetailRelatedAnalyticsEvent(),
-                      integrationsDetailRelatedAnalyticsData(
-                        integration.slug,
-                        r.slug,
-                        rowIndex,
-                        related.length,
-                      ),
-                    )
-                  }
-                />
+              {related.map((r) => (
+                <IntegrationCard key={r.slug} integration={r} compact />
               ))}
             </div>
           </div>

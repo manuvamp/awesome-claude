@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildOgCardHtml, withAlpha } from "@/lib/og-render-lib";
+import { buildOgCardHtml, withAlpha } from "@/lib/og-render.server";
 import { categoryAccent } from "@/lib/og-image";
 
 // Note: renderOgPng is a thin wrapper that constructs a workers-og ImageResponse, whose

@@ -7,41 +7,18 @@ import {
   contributorForVerifiedAuthor,
   findContributorForIdentity,
 } from "@/data/contributors";
-import { trackEvent } from "@/lib/analytics";
-import {
-  contributorAttributionAnalyticsData,
-  contributorAttributionAnalyticsEvent,
-  contributorAttributionProfileDestination,
-  type ContributorAttributionRole,
-} from "@/lib/contributor-attribution-cta-events";
 
 function ContributorProfileLink({
   contributor,
   label,
-  role,
   className = "text-ink hover:underline",
 }: {
   contributor: Contributor;
   label: string;
-  role: ContributorAttributionRole;
   className?: string;
 }) {
-  const destination = contributorAttributionProfileDestination(contributor.slug);
-  if (!destination) {
-    return <span className={className}>{label}</span>;
-  }
   return (
-    <Link
-      to={destination.to}
-      params={destination.params}
-      className={className}
-      onClick={() =>
-        trackEvent(
-          contributorAttributionAnalyticsEvent(),
-          contributorAttributionAnalyticsData("profile", role, contributor.slug),
-        )
-      }
-    >
+    <Link to="/contributors/$slug" params={{ slug: contributor.slug }} className={className}>
       {label}
     </Link>
   );
@@ -57,18 +34,7 @@ function ExternalSubmitterLink({
   if (!entry.submittedBy) return null;
   const href = entry.submittedByUrl ?? `https://github.com/${entry.submittedBy}`;
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className={className}
-      onClick={() =>
-        trackEvent(
-          contributorAttributionAnalyticsEvent(),
-          contributorAttributionAnalyticsData("external", "submitter"),
-        )
-      }
-    >
+    <a href={href} target="_blank" rel="noreferrer" className={className}>
       {entry.submittedBy}
     </a>
   );
@@ -83,18 +49,7 @@ function UnverifiedAuthorLabel({
 }) {
   if (entry.authorProfileUrl) {
     return (
-      <a
-        href={entry.authorProfileUrl}
-        target="_blank"
-        rel="noreferrer"
-        className={className}
-        onClick={() =>
-          trackEvent(
-            contributorAttributionAnalyticsEvent(),
-            contributorAttributionAnalyticsData("external", "author"),
-          )
-        }
-      >
+      <a href={entry.authorProfileUrl} target="_blank" rel="noreferrer" className={className}>
         {entry.author}
       </a>
     );
@@ -112,14 +67,13 @@ export function EntryAuthorAttribution({ entry, className }: { entry: Entry; cla
   if (verifiedAuthor) {
     return (
       <span className={className}>
-        by{" "}
-        <ContributorProfileLink contributor={verifiedAuthor} label={entry.author} role="author" />
+        by <ContributorProfileLink contributor={verifiedAuthor} label={entry.author} />
       </span>
     );
   }
 
   const authorLabel = authorContributor ? (
-    <ContributorProfileLink contributor={authorContributor} label={entry.author} role="author" />
+    <ContributorProfileLink contributor={authorContributor} label={entry.author} />
   ) : (
     <UnverifiedAuthorLabel entry={entry} />
   );
@@ -133,11 +87,7 @@ export function EntryAuthorAttribution({ entry, className }: { entry: Entry; cla
       by {authorLabel}
       {" · submitted by "}
       {submitterContributor ? (
-        <ContributorProfileLink
-          contributor={submitterContributor}
-          label={entry.submittedBy}
-          role="submitter"
-        />
+        <ContributorProfileLink contributor={submitterContributor} label={entry.submittedBy} />
       ) : (
         <ExternalSubmitterLink entry={entry} />
       )}
@@ -160,7 +110,6 @@ export function ProvenanceAuthorAttribution({
       <ContributorProfileLink
         contributor={verifiedAuthor}
         label={entry.author}
-        role="author"
         className={className}
       />
     );
@@ -171,7 +120,6 @@ export function ProvenanceAuthorAttribution({
       <ContributorProfileLink
         contributor={authorContributor}
         label={entry.author}
-        role="author"
         className={className}
       />
     );
@@ -191,29 +139,11 @@ export function ContributorIdentityLink({
 }) {
   const contributor = findContributorForIdentity(name, profileUrl);
   if (contributor) {
-    return (
-      <ContributorProfileLink
-        contributor={contributor}
-        label={name}
-        role="identity"
-        className={className}
-      />
-    );
+    return <ContributorProfileLink contributor={contributor} label={name} className={className} />;
   }
   if (profileUrl) {
     return (
-      <a
-        href={profileUrl}
-        target="_blank"
-        rel="noreferrer"
-        className={className}
-        onClick={() =>
-          trackEvent(
-            contributorAttributionAnalyticsEvent(),
-            contributorAttributionAnalyticsData("external", "identity"),
-          )
-        }
-      >
+      <a href={profileUrl} target="_blank" rel="noreferrer" className={className}>
         {name}
       </a>
     );

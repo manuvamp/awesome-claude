@@ -1,28 +1,8 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { Star, ArrowUpRight, TrendingUp } from "lucide-react";
-import {
-  CategoryPill,
-  TrustBadge,
-  SourceBadge,
-  InstallRiskBadge,
-  NotesPresenceChips,
-} from "@/components/badges";
+import { CategoryPill, TrustBadge, SourceBadge } from "@/components/badges";
 import { formatCompact } from "@/lib/format";
-import { trackEvent } from "@/lib/analytics";
-import {
-  badgeChromeCategoryAnalyticsData,
-  badgeChromeCategoryAnalyticsEvent,
-  badgeChromeSourceAnalyticsData,
-  badgeChromeSourceAnalyticsEvent,
-  badgeChromeTrustAnalyticsData,
-  badgeChromeTrustAnalyticsEvent,
-} from "@/lib/badge-chrome-cta-events";
-import {
-  hubTrendingPodiumEntryAnalyticsData,
-  hubTrendingPodiumEntryAnalyticsEvent,
-  hubEntryDestination,
-} from "@/lib/hub-entry-cta-events";
 import { cn } from "@/lib/utils";
 import type { Entry } from "@/types/registry";
 
@@ -41,22 +21,11 @@ export function TrendingPodium({ entries }: { entries: TrendingEntry[] }) {
   const top = entries.slice(0, 3);
   if (top.length === 0) return null;
 
-  const trackPodiumClick = React.useCallback(
-    (entry: TrendingEntry, rank: number) => {
-      trackEvent(
-        hubTrendingPodiumEntryAnalyticsEvent(),
-        hubTrendingPodiumEntryAnalyticsData(entry.category, entry.slug, rank, top.length),
-      );
-    },
-    [top.length],
-  );
-
   return (
     <div className="mt-8 grid gap-3 stagger-children sm:grid-cols-3">
       {top.map((e, i) => {
         const style = RANK_STYLES[i] ?? RANK_STYLES[2];
         const isFirst = i === 0;
-        const entryDestination = hubEntryDestination(e.category, e.slug);
         return (
           <div
             key={`${e.category}/${e.slug}`}
@@ -86,62 +55,21 @@ export function TrendingPodium({ entries }: { entries: TrendingEntry[] }) {
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <CategoryPill
-                asLink
-                category={e.category}
-                onNavigate={() =>
-                  trackEvent(
-                    badgeChromeCategoryAnalyticsEvent(),
-                    badgeChromeCategoryAnalyticsData(e.category, "trending-podium"),
-                  )
-                }
-              >
-                {e.category}
-              </CategoryPill>
-              <TrustBadge
-                level={e.trust}
-                asLink
-                onNavigate={() =>
-                  trackEvent(
-                    badgeChromeTrustAnalyticsEvent(),
-                    badgeChromeTrustAnalyticsData(e.trust, "trending-podium"),
-                  )
-                }
-              />
-              <SourceBadge
-                status={e.source}
-                asLink
-                onNavigate={() =>
-                  trackEvent(
-                    badgeChromeSourceAnalyticsEvent(),
-                    badgeChromeSourceAnalyticsData(e.source, "trending-podium"),
-                  )
-                }
-              />
-              <InstallRiskBadge entry={e} size="xs" asLink surface="trending-podium" />
-              <NotesPresenceChips entry={e} asLink surface="trending-podium" />
-            </div>
-            {entryDestination ? (
-              <Link
-                to={entryDestination.to}
-                params={entryDestination.params}
-                onClick={() => trackPodiumClick(e, i + 1)}
-                className="mt-2 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded-sm"
-              >
-                <div className="font-display text-lg font-semibold leading-snug text-ink group-hover:underline">
-                  {e.title}
-                </div>
-                <p className="mt-1 line-clamp-2 text-sm text-ink-muted">{e.description}</p>
-              </Link>
-            ) : (
-              <div className="mt-2 min-w-0">
-                <div className="font-display text-lg font-semibold leading-snug text-ink">
-                  {e.title}
-                </div>
-                <p className="mt-1 line-clamp-2 text-sm text-ink-muted">{e.description}</p>
+            <Link
+              to="/entry/$category/$slug"
+              params={{ category: e.category, slug: e.slug }}
+              className="mt-3 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 rounded-sm"
+            >
+              <div className="flex flex-wrap items-center gap-1.5">
+                <CategoryPill>{e.category}</CategoryPill>
+                <TrustBadge level={e.trust} />
+                <SourceBadge status={e.source} />
               </div>
-            )}
+              <div className="mt-2 font-display text-lg font-semibold leading-snug text-ink group-hover:underline">
+                {e.title}
+              </div>
+              <p className="mt-1 line-clamp-2 text-sm text-ink-muted">{e.description}</p>
+            </Link>
 
             <div className="mt-3 flex items-end justify-between gap-3">
               <div className="min-w-0 text-[11px] text-ink-subtle">
@@ -159,16 +87,13 @@ export function TrendingPodium({ entries }: { entries: TrendingEntry[] }) {
               </div>
             </div>
 
-            {entryDestination ? (
-              <Link
-                to={entryDestination.to}
-                params={entryDestination.params}
-                onClick={() => trackPodiumClick(e, i + 1)}
-                className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-ink-muted hover:text-ink"
-              >
-                Inspect <ArrowUpRight className="h-3 w-3" />
-              </Link>
-            ) : null}
+            <Link
+              to="/entry/$category/$slug"
+              params={{ category: e.category, slug: e.slug }}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-ink-muted hover:text-ink"
+            >
+              Inspect <ArrowUpRight className="h-3 w-3" />
+            </Link>
           </div>
         );
       })}

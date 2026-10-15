@@ -2,11 +2,6 @@ import * as React from "react";
 import { Bell, BellOff } from "lucide-react";
 import { toast } from "sonner";
 import { useWatch, type WatchKind } from "@/lib/watch";
-import { trackEvent } from "@/lib/analytics";
-import {
-  entryDetailWatchAnalyticsData,
-  entryDetailWatchAnalyticsEvent,
-} from "@/lib/entry-detail-watch-cta-events";
 import { cn } from "@/lib/utils";
 
 export function WatchButton({
@@ -17,7 +12,6 @@ export function WatchButton({
   size = "md",
   variant = "outline",
   fullLabel,
-  analyticsEntry,
 }: {
   id: string;
   kind: WatchKind;
@@ -27,8 +21,6 @@ export function WatchButton({
   variant?: "outline" | "ghost";
   /** Optional label override displayed in the watching/unwatched states. */
   fullLabel?: { on?: string; off?: string };
-  /** When set, emits detail watch analytics for toggle actions. */
-  analyticsEntry?: { category: string; slug: string };
 }) {
   const watch = useWatch();
   const active = watch.isWatching(id);
@@ -37,14 +29,7 @@ export function WatchButton({
     <button
       type="button"
       onClick={() => {
-        const watching = !active;
         watch.toggle({ id, kind, label, href });
-        if (analyticsEntry) {
-          trackEvent(
-            entryDetailWatchAnalyticsEvent(watching),
-            entryDetailWatchAnalyticsData(analyticsEntry.category, analyticsEntry.slug, kind),
-          );
-        }
         if (active) toast(`Stopped watching ${label}`);
         else
           toast.success(`Watching ${label}`, {

@@ -30,38 +30,39 @@ import {
   type AlertSchedule,
 } from "@/lib/recents";
 import { subscribeToNewsletter } from "@/lib/api/newsletter";
-import { hashSearch } from "@/lib/saved-search-hash-lib";
-import { applyToBrowseSearch } from "@/lib/saved-search-nav-lib";
-import { defaultAlerts } from "@/lib/saved-search-default-alerts-lib";
-import { savedFeedUrl } from "@/lib/saved-search-feed-url-lib";
 import { CopyButton } from "@/components/copy-button";
 import { cn } from "@/lib/utils";
-import { trackEvent } from "@/lib/analytics";
-import {
-  browseSavedSearchManagerAlertsCancelAnalyticsData,
-  browseSavedSearchManagerAlertsCancelAnalyticsEvent,
-  browseSavedSearchManagerAlertsEditorAnalyticsData,
-  browseSavedSearchManagerAlertsEditorAnalyticsEvent,
-  browseSavedSearchManagerAlertsSaveAnalyticsData,
-  browseSavedSearchManagerAlertsSaveAnalyticsEvent,
-  browseSavedSearchManagerAlertsToggleAnalyticsData,
-  browseSavedSearchManagerAlertsToggleAnalyticsEvent,
-  browseSavedSearchManagerApplyAnalyticsData,
-  browseSavedSearchManagerApplyAnalyticsEvent,
-  browseSavedSearchManagerCadenceSelectAnalyticsData,
-  browseSavedSearchManagerCadenceSelectAnalyticsEvent,
-  browseSavedSearchManagerChannelToggleAnalyticsData,
-  browseSavedSearchManagerChannelToggleAnalyticsEvent,
-  browseSavedSearchManagerFeedCopyAnalyticsData,
-  browseSavedSearchManagerFeedCopyAnalyticsEvent,
-  browseSavedSearchManagerOpenAnalyticsData,
-  browseSavedSearchManagerOpenAnalyticsEvent,
-  browseSavedSearchManagerRemoveAnalyticsData,
-  browseSavedSearchManagerRemoveAnalyticsEvent,
-  browseSavedSearchManagerRenameAnalyticsData,
-  browseSavedSearchManagerRenameAnalyticsEvent,
-  savedSearchFilterCount,
-} from "@/lib/browse-saved-search-cta-events";
+
+function applyToBrowseSearch(s: SavedSearch) {
+  return {
+    q: s.q ?? "",
+    category: s.category ?? "",
+    trust: s.trust ?? "",
+    source: s.source ?? "",
+    platform: s.platform ?? "",
+    sort: (s.sort as "popular" | "newest" | "title") ?? "popular",
+    view: "row" as const,
+    compare: "",
+  };
+}
+
+function hashSearch(s: SavedSearch): string {
+  const raw = `${s.q}|${s.category ?? ""}|${s.trust ?? ""}|${s.source ?? ""}|${s.platform ?? ""}`;
+  let h = 0;
+  for (let i = 0; i < raw.length; i++) h = (h * 31 + raw.charCodeAt(i)) | 0;
+  return Math.abs(h).toString(36);
+}
+
+export function savedFeedUrl(s: SavedSearch): string {
+  const p = new URLSearchParams();
+  if (s.q) p.set("q", s.q);
+  if (s.category) p.set("category", s.category);
+  if (s.trust) p.set("trust", s.trust);
+  if (s.source) p.set("source", s.source);
+  if (s.platform) p.set("platform", s.platform);
+  if (s.label) p.set("label", s.label);
+  return `/feeds/saved.xml?${p.toString()}`;
+}
 
 interface ManagerProps {
   open?: boolean;
@@ -81,6 +82,10 @@ const CHANNEL_META: {
 
 const CADENCES: AlertCadence[] = ["instant", "daily", "weekly"];
 
+function defaultAlerts(): AlertSchedule {
+  return { enabled: true, channels: ["inapp"], cadence: "instant" };
+}
+
 function AlertEditor({
   search,
   initial,
@@ -94,20 +99,11 @@ function AlertEditor({
 }) {
   const [draft, setDraft] = React.useState<AlertSchedule>(initial);
   const [busy, setBusy] = React.useState(false);
-  const toggleChannel = (c: AlertChannel) => {
-    const enabled = !draft.channels.includes(c);
-    const channelCount = enabled
-      ? draft.channels.length + 1
-      : Math.max(0, draft.channels.length - 1);
-    trackEvent(
-      browseSavedSearchManagerChannelToggleAnalyticsEvent(),
-      browseSavedSearchManagerChannelToggleAnalyticsData(c, enabled, channelCount),
-    );
+  const toggleChannel = (c: AlertChannel) =>
     setDraft((d) => ({
       ...d,
-      channels: enabled ? [...d.channels, c] : d.channels.filter((x) => x !== c),
+      channels: d.channels.includes(c) ? d.channels.filter((x) => x !== c) : [...d.channels, c],
     }));
-  };
 
   const needsEmail = draft.channels.includes("email");
   const feedHref = savedFeedUrl(search);
@@ -141,13 +137,7 @@ function AlertEditor({
           <button
             key={c}
             type="button"
-            onClick={() => {
-              trackEvent(
-                browseSavedSearchManagerCadenceSelectAnalyticsEvent(),
-                browseSavedSearchManagerCadenceSelectAnalyticsData(c, draft.channels.length),
-              );
-              setDraft((d) => ({ ...d, cadence: c }));
-            }}
+            onClick={() => setDraft((d) => ({ ...d, cadence: c }))}
             className={cn(
               "inline-flex h-6 items-center rounded-full border px-2 text-[11px] capitalize",
               draft.cadence === c
@@ -172,26 +162,13 @@ function AlertEditor({
         <div className="mt-2 flex items-center gap-2 rounded-md border border-border bg-surface px-2 py-1">
           <Rss className="h-3 w-3 text-accent" />
           <code className="flex-1 truncate font-mono text-[11px] text-ink-muted">{feedHref}</code>
-          <CopyButton
-            value={feedHref}
-            label="Copy"
-            event={browseSavedSearchManagerFeedCopyAnalyticsEvent()}
-            eventData={browseSavedSearchManagerFeedCopyAnalyticsData(
-              savedSearchFilterCount(search),
-            )}
-          />
+          <CopyButton value={feedHref} label="Copy" />
         </div>
       )}
       <div className="mt-3 flex items-center justify-end gap-1">
         <button
           type="button"
-          onClick={() => {
-            trackEvent(
-              browseSavedSearchManagerAlertsCancelAnalyticsEvent(),
-              browseSavedSearchManagerAlertsCancelAnalyticsData(savedSearchFilterCount(search)),
-            );
-            onCancel();
-          }}
+          onClick={onCancel}
           className="inline-flex h-7 items-center rounded-md border border-border bg-surface px-2 text-[11px] text-ink-muted hover:text-ink"
         >
           Cancel
@@ -219,59 +196,19 @@ function AlertEditor({
 export function SavedSearchManager({ open, onOpenChange, trigger }: ManagerProps) {
   const recents = useRecents();
   const navigate = useNavigate();
-  const wasOpenRef = React.useRef(Boolean(open));
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draftLabel, setDraftLabel] = React.useState("");
   const [alertsEditingId, setAlertsEditingId] = React.useState<string | null>(null);
   const [msg, setMsg] = React.useState<{ id: string; text: string; ok: boolean } | null>(null);
 
-  // Track open for both Dialog-driven and parent-controlled open (e.g. Manage).
-  React.useEffect(() => {
-    if (open && !wasOpenRef.current) {
-      trackEvent(
-        browseSavedSearchManagerOpenAnalyticsEvent(),
-        browseSavedSearchManagerOpenAnalyticsData(recents.saved.length),
-      );
-    }
-    wasOpenRef.current = Boolean(open);
-  }, [open, recents.saved.length]);
-
-  const handleOpenChange = React.useCallback(
-    (next: boolean) => {
-      onOpenChange?.(next);
-    },
-    [onOpenChange],
-  );
-
-  const close = () => handleOpenChange(false);
+  const close = () => onOpenChange?.(false);
 
   const apply = (s: SavedSearch) => {
-    trackEvent(
-      browseSavedSearchManagerApplyAnalyticsEvent(),
-      browseSavedSearchManagerApplyAnalyticsData(s),
-    );
     navigate({ to: "/browse", search: applyToBrowseSearch(s) });
     close();
   };
 
-  const renameSaved = (id: string, label: string) => {
-    trackEvent(
-      browseSavedSearchManagerRenameAnalyticsEvent(),
-      browseSavedSearchManagerRenameAnalyticsData(recents.saved.length),
-    );
-    recents.renameSaved(id, label);
-    setEditingId(null);
-  };
-
   const saveAlerts = async (s: SavedSearch, alerts: AlertSchedule) => {
-    trackEvent(
-      browseSavedSearchManagerAlertsSaveAnalyticsEvent(),
-      browseSavedSearchManagerAlertsSaveAnalyticsData(
-        alerts.channels.length,
-        alerts.cadence,
-        alerts.channels.includes("email") && Boolean(alerts.email),
-      ),
-    );
     recents.updateSavedAlerts(s.id, alerts);
     if (alerts.channels.includes("email") && alerts.email) {
       const res = await subscribeToNewsletter({
@@ -291,7 +228,7 @@ export function SavedSearchManager({ open, onOpenChange, trigger }: ManagerProps
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="max-w-xl">
         <DialogHeader>
@@ -326,7 +263,8 @@ export function SavedSearchManager({ open, onOpenChange, trigger }: ManagerProps
                         onChange={(e) => setDraftLabel(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
-                            renameSaved(s.id, draftLabel);
+                            recents.renameSaved(s.id, draftLabel);
+                            setEditingId(null);
                           } else if (e.key === "Escape") {
                             setEditingId(null);
                           }
@@ -348,7 +286,10 @@ export function SavedSearchManager({ open, onOpenChange, trigger }: ManagerProps
                         <button
                           type="button"
                           aria-label="Save name"
-                          onClick={() => renameSaved(s.id, draftLabel)}
+                          onClick={() => {
+                            recents.renameSaved(s.id, draftLabel);
+                            setEditingId(null);
+                          }}
                           className="rounded p-1 text-ink-muted hover:text-ink"
                         >
                           <Check className="h-3.5 w-3.5" />
@@ -369,16 +310,7 @@ export function SavedSearchManager({ open, onOpenChange, trigger }: ManagerProps
                       <button
                         type="button"
                         aria-label={alertsOn ? "Disable alerts" : "Enable alerts"}
-                        onClick={() => {
-                          trackEvent(
-                            browseSavedSearchManagerAlertsToggleAnalyticsEvent(),
-                            browseSavedSearchManagerAlertsToggleAnalyticsData(
-                              !alertsOn,
-                              savedSearchFilterCount(s),
-                            ),
-                          );
-                          recents.toggleSavedAlerts(s.id, !alertsOn);
-                        }}
+                        onClick={() => recents.toggleSavedAlerts(s.id, !alertsOn)}
                         className={cn(
                           "rounded p-1",
                           alertsOn ? "text-accent" : "text-ink-muted hover:text-ink",
@@ -393,17 +325,7 @@ export function SavedSearchManager({ open, onOpenChange, trigger }: ManagerProps
                       <button
                         type="button"
                         aria-label="Edit alert schedule"
-                        onClick={() => {
-                          const nextOpen = !isAlerting;
-                          trackEvent(
-                            browseSavedSearchManagerAlertsEditorAnalyticsEvent(),
-                            browseSavedSearchManagerAlertsEditorAnalyticsData(
-                              nextOpen,
-                              savedSearchFilterCount(s),
-                            ),
-                          );
-                          setAlertsEditingId(nextOpen ? s.id : null);
-                        }}
+                        onClick={() => setAlertsEditingId(isAlerting ? null : s.id)}
                         className="rounded p-1 text-ink-muted hover:text-ink"
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -412,10 +334,6 @@ export function SavedSearchManager({ open, onOpenChange, trigger }: ManagerProps
                         type="button"
                         aria-label="Delete"
                         onClick={() => {
-                          trackEvent(
-                            browseSavedSearchManagerRemoveAnalyticsEvent(),
-                            browseSavedSearchManagerRemoveAnalyticsData(recents.saved.length),
-                          );
                           recents.removeSaved(s.id);
                           toast(`Removed “${s.label}”`);
                         }}
@@ -460,8 +378,6 @@ export function SavedSearchManager({ open, onOpenChange, trigger }: ManagerProps
                   )}
                   {msg?.id === s.id && (
                     <p
-                      role="status"
-                      aria-live="polite"
                       className={cn(
                         "text-[11px]",
                         msg.ok ? "text-trust-trusted" : "text-trust-blocked",

@@ -48,8 +48,6 @@ export type RegistryEntry = Record<string, unknown> & {
   brandIconUrl?: string;
   brandLogoUrl?: string;
   brandAssetSource?: string;
-  brandVerifiedAt?: string;
-  brandColors?: string[];
   prerequisites?: string[];
   safetyNotes?: string | string[];
   privacyNotes?: string | string[];
@@ -277,36 +275,20 @@ export function inferSource(entry: RegistryEntry): SourceStatus {
   if (entry.downloadTrust === "first-party" || entry.trustSignals?.firstPartyEditorial) {
     return "first-party";
   }
-  // `githubUrl` is the always-present self-referential directory link, not a
-  // real external repo, so it must not by itself qualify an entry as
-  // source-backed (matching quality-lib's buildSourceProvenance exclusion).
-  const hasRealGithubUrl =
-    Boolean(entry.githubUrl) &&
-    !String(entry.githubUrl).includes("github.com/JSONbored/awesome-claude");
-  if (entry.repoUrl || hasRealGithubUrl || entry.trustSignals?.sourceStatus === "available") {
+  if (entry.repoUrl || entry.githubUrl || entry.trustSignals?.sourceStatus === "available") {
     return "source-backed";
   }
   if (entry.documentationUrl || entry.websiteUrl) return "external";
   return "unverified";
 }
 
-/**
- * Trust posture for a normalized registry entry.
- *
- * Risk-bearing categories (mcp / hooks / skills / commands / statuslines) can
- * execute code, touch the filesystem, or call the network. When neither
- * safetyNotes nor privacyNotes disclose that behavior, the listing is
- * `blocked` — the highest caution tier — so install-risk surfaces can warn
- * "High risk — do not install without human review." Notes present (or a
- * non-risk category) stay at `review`.
- */
 export function inferTrust(entry: RegistryEntry, source: SourceStatus): TrustLevel {
   const hasNotes = Boolean(entry.safetyNotes || entry.privacyNotes);
   if (entry.packageVerified && entry.downloadSha256) return "trusted";
   if (entry.trustSignals?.firstPartyEditorial) return "trusted";
   if (source === "unverified") return "limited";
   if (["mcp", "hooks", "skills", "commands", "statuslines"].includes(entry.category) && !hasNotes) {
-    return "blocked";
+    return "review";
   }
   return "review";
 }
@@ -444,8 +426,6 @@ export function buildEntryFromRegistry(entry: RegistryEntry, attribution: EntryA
     brandIconUrl: entry.brandIconUrl,
     brandLogoUrl: entry.brandLogoUrl,
     brandAssetSource: entry.brandAssetSource,
-    brandVerifiedAt: entry.brandVerifiedAt,
-    brandColors: entry.brandColors,
     tags: entry.tags ?? [],
     keywords: entry.keywords ?? [],
     platforms,
@@ -455,15 +435,7 @@ export function buildEntryFromRegistry(entry: RegistryEntry, attribution: EntryA
     fullCopy: copyPayload,
     usageSnippet: entry.usageSnippet,
     copySnippet: entry.copySnippet,
-    // Match inferSource: the always-present directory githubUrl is not real
-    // external provenance and must not satisfy Boolean(entry.sourceUrl) gates.
-    sourceUrl:
-      entry.repoUrl ??
-      (entry.githubUrl && !String(entry.githubUrl).includes("github.com/JSONbored/awesome-claude")
-        ? entry.githubUrl
-        : undefined) ??
-      entry.documentationUrl ??
-      entry.websiteUrl,
+    sourceUrl: entry.repoUrl ?? entry.githubUrl ?? entry.documentationUrl ?? entry.websiteUrl,
     docsUrl: entry.documentationUrl,
     repoUrl: entry.repoUrl ?? undefined,
     websiteUrl: entry.websiteUrl,
@@ -473,11 +445,7 @@ export function buildEntryFromRegistry(entry: RegistryEntry, attribution: EntryA
     repoStats: normalizeRepoStats(entry),
     relatedEntries: normalizeRelatedEntries(entry.relatedEntries),
     dateAdded: entry.dateAdded ?? entry.contentUpdatedAt?.slice(0, 10) ?? "2026-01-01",
-    // Requires a named reviewer. `reviewedAt` falls back to the build-time
-    // `contentUpdatedAt`, and `packageVerified` is an automated package check,
-    // so neither evidences the human sign-off the "Maintainer-reviewed" label
-    // claims.
-    reviewed: Boolean(entry.reviewedBy),
+    reviewed: Boolean(reviewedAt || entry.packageVerified),
     claimed: normalizeClaimStatus(entry.claimStatus) === "verified",
     claimStatus: normalizeClaimStatus(entry.claimStatus),
     safetyNotes,

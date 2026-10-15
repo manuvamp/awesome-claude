@@ -17,7 +17,6 @@ import {
   normalizeSupportLevel,
   type RegistryEntry,
 } from "../apps/web/src/lib/entry-normalize-lib";
-import { installRiskLevel } from "../apps/web/src/lib/trust-lib";
 
 function baseEntry(overrides: Partial<RegistryEntry> = {}): RegistryEntry {
   return {
@@ -182,19 +181,6 @@ describe("entry normalize lib helpers", () => {
       expect(inferSource(baseEntry())).toBe("unverified");
     });
 
-    it("does not treat the self-referential directory githubUrl as source-backed", () => {
-      // Every entry always carries this directory link; it must not by itself
-      // qualify an entry as source-backed.
-      expect(
-        inferSource(
-          baseEntry({
-            githubUrl:
-              "https://github.com/JSONbored/awesome-claude/blob/main/content/hooks/x.mdx",
-          }),
-        ),
-      ).toBe("unverified");
-    });
-
     it("derives trust posture from verification and notes", () => {
       const trusted = baseEntry({
         packageVerified: true,
@@ -209,69 +195,18 @@ describe("entry normalize lib helpers", () => {
 
       expect(inferTrust(baseEntry(), "unverified")).toBe("limited");
 
-      // Risk-bearing category with no safety/privacy notes → blocked.
-      // This is the only path that produces TrustLevel "blocked".
-      const blocked = baseEntry({
+      const review = baseEntry({
         category: "mcp",
         githubUrl: "https://github.com/example/repo",
       });
-      expect(inferTrust(blocked, inferSource(blocked))).toBe("blocked");
+      expect(inferTrust(review, inferSource(review))).toBe("review");
 
-      // Same risk category with mitigating notes stays at review.
       const reviewed = baseEntry({
         category: "mcp",
         githubUrl: "https://github.com/example/repo",
         safetyNotes: "Runs locally only.",
       });
       expect(inferTrust(reviewed, inferSource(reviewed))).toBe("review");
-
-      // Privacy notes alone also clear the blocked gate.
-      const privacyNoted = baseEntry({
-        category: "hooks",
-        githubUrl: "https://github.com/example/hooks",
-        privacyNotes: "Reads local git config only.",
-      });
-      expect(inferTrust(privacyNoted, inferSource(privacyNoted))).toBe(
-        "review",
-      );
-
-      // Non-risk categories without notes are review, not blocked.
-      const guide = baseEntry({
-        category: "guides",
-        githubUrl: "https://github.com/example/guide",
-      });
-      expect(inferTrust(guide, inferSource(guide))).toBe("review");
-    });
-
-    it("can produce blocked for every risk-bearing category without notes", () => {
-      for (const category of [
-        "mcp",
-        "hooks",
-        "skills",
-        "commands",
-        "statuslines",
-      ] as const) {
-        const entry = baseEntry({
-          category,
-          githubUrl: "https://github.com/example/risk",
-        });
-        expect(inferTrust(entry, inferSource(entry))).toBe("blocked");
-      }
-    });
-
-    it("unblocks installRiskLevel high via normalize → blocked cascade", () => {
-      const registry = baseEntry({
-        category: "mcp",
-        slug: "blocked-fixture",
-        title: "Blocked Fixture MCP",
-        githubUrl: "https://github.com/example/blocked-fixture",
-      });
-      const normalized = buildEntryFromRegistry(
-        registry,
-        attribution(registry),
-      );
-      expect(normalized.trust).toBe("blocked");
-      expect(installRiskLevel(normalized)).toBe("high");
     });
   });
 
@@ -540,9 +475,7 @@ describe("buildEntryFromRegistry", () => {
       dateAdded: "2026-03-01",
       claimStatus: "verified",
       claimed: true,
-      // This fixture has no `reviewedBy`, so there is no named maintainer
-      // sign-off to report.
-      reviewed: false,
+      reviewed: true,
       harness: ["claude-code"],
     });
     expect(entry.relatedEntries).toEqual([
@@ -551,20 +484,6 @@ describe("buildEntryFromRegistry", () => {
         relation: "works-with",
       }),
     ]);
-  });
-
-  it("copies brandVerifiedAt/brandColors from the registry entry", () => {
-    const entry = buildEntryFromRegistry(
-      baseEntry({
-        brandName: "Example",
-        brandVerifiedAt: "2026-05-01T00:00:00.000Z",
-        brandColors: ["#101010", "#f0f0f0"],
-      }),
-      attribution(),
-    );
-
-    expect(entry.brandVerifiedAt).toBe("2026-05-01T00:00:00.000Z");
-    expect(entry.brandColors).toEqual(["#101010", "#f0f0f0"]);
   });
 
   it("rejects invalid hook triggers and script languages", () => {
@@ -632,35 +551,9 @@ describe("buildEntryFromRegistry", () => {
     expect(entry.skillType).toBe("general");
     expect(entry.skillLevel).toBe("foundational");
     expect(entry.verificationStatus).toBe("validated");
-    // `packageVerified` + `reviewedAt` are automated signals, not a maintainer
-    // sign-off, so they must not satisfy `reviewed`.
-    expect(entry.reviewed).toBe(false);
+    expect(entry.reviewed).toBe(true);
     expect(entry.repoUrl).toBeUndefined();
     expect(entry.sourceUrl).toBe("https://github.com/example/repo");
-  });
-
-  it("only reports reviewed for an actual named reviewer", () => {
-    // `contentUpdatedAt` is a build-time stamp the content pipeline sets when
-    // frontmatter omits one — no human reviewed anything, so the
-    // "Maintainer-reviewed" claim must not be satisfied by it.
-    const buildStampOnly = buildEntryFromRegistry(
-      baseEntry({ contentUpdatedAt: "2026-02-01T00:00:00.000Z" }),
-      attribution(),
-    );
-    expect(buildStampOnly.reviewed).toBe(false);
-
-    // Automated package verification is likewise not a maintainer sign-off.
-    const packageVerifiedOnly = buildEntryFromRegistry(
-      baseEntry({ packageVerified: true }),
-      attribution(),
-    );
-    expect(packageVerifiedOnly.reviewed).toBe(false);
-
-    const namedReviewer = buildEntryFromRegistry(
-      baseEntry({ reviewedBy: "Maintainer Name" }),
-      attribution(),
-    );
-    expect(namedReviewer.reviewed).toBe(true);
   });
 
   it("uses copy payload precedence and source url fallbacks", () => {
@@ -683,27 +576,5 @@ describe("buildEntryFromRegistry", () => {
       attribution(),
     );
     expect(withDocs.sourceUrl).toBe("https://docs.example.com/guide");
-  });
-
-  it("does not set sourceUrl from a self-referential directory githubUrl (#5671)", () => {
-    const entry = buildEntryFromRegistry(
-      baseEntry({
-        githubUrl:
-          "https://github.com/JSONbored/awesome-claude/blob/main/content/skills/fixture-skill.mdx",
-      }),
-      attribution(),
-    );
-    expect(entry.sourceUrl).toBeUndefined();
-    expect(entry.source).toBe("unverified");
-  });
-
-  it("still uses a real external githubUrl for sourceUrl (#5671)", () => {
-    const entry = buildEntryFromRegistry(
-      baseEntry({
-        githubUrl: "https://github.com/example/real-repo",
-      }),
-      attribution(),
-    );
-    expect(entry.sourceUrl).toBe("https://github.com/example/real-repo");
   });
 });

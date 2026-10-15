@@ -7,27 +7,6 @@ import { useShortcuts } from "./shortcuts-dialog";
 import { ScrollProgress } from "./scroll-progress";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { trackEvent } from "@/lib/analytics";
-import {
-  appShellCategoryAnalyticsData,
-  appShellCategoryAnalyticsEvent,
-  appShellCategoryDestination,
-  appShellFeedChipAnalyticsData,
-  appShellFeedChipAnalyticsEvent,
-  appShellFeedChipHrefDestination,
-  appShellFooterLinkAnalyticsData,
-  appShellFooterLinkAnalyticsEvent,
-  appShellHeaderAnalyticsData,
-  appShellHeaderAnalyticsEvent,
-  appShellHeaderSubmitDestination,
-  appShellLegalAnalyticsData,
-  appShellLegalAnalyticsEvent,
-  appShellLegalRouteDestination,
-  appShellNavAnalyticsData,
-  appShellNavAnalyticsEvent,
-  appShellNavRouteDestination,
-  type AppShellFeedChip,
-} from "@/lib/app-shell-cta-events";
 import { NewsletterInline } from "./newsletter-inline";
 import {
   Sheet,
@@ -37,16 +16,17 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { CATEGORIES } from "@/types/registry";
-import {
-  SHELL_MOBILE_NAV_SECTIONS,
-  SHELL_PRIMARY_NAV,
-  shellNavItemActive,
-} from "@/lib/app-shell-nav-lib";
-import {
-  footerColumnSpanClass,
-  SHELL_FOOTER_COLUMNS,
-  shellFooterBrandSpanClass,
-} from "@/lib/app-shell-footer-lib";
+
+const NAV = [
+  { to: "/browse", label: "Browse" },
+  { to: "/trending", label: "Trending" },
+  { to: "/best", label: "Best" },
+  { to: "/tags", label: "Tags" },
+  { to: "/for", label: "Platforms" },
+  { to: "/ecosystem", label: "Ecosystem" },
+  { to: "/jobs", label: "Jobs" },
+  { to: "/quality", label: "Quality" },
+] as const;
 
 export function TopBar() {
   const { theme, toggle } = useTheme();
@@ -54,7 +34,6 @@ export function TopBar() {
   const isHome = pathname === "/";
   const [elevated, setElevated] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  const submitDestination = appShellHeaderSubmitDestination("submit");
   React.useEffect(() => {
     const onScroll = () => setElevated(window.scrollY > 8);
     onScroll();
@@ -76,25 +55,14 @@ export function TopBar() {
       <div className="mx-auto flex h-14 max-w-page items-center gap-4 px-4 sm:px-6">
         <button
           type="button"
-          onClick={() => {
-            trackEvent(appShellHeaderAnalyticsEvent(), appShellHeaderAnalyticsData("menu"));
-            setMobileNavOpen(true);
-          }}
+          onClick={() => setMobileNavOpen(true)}
           aria-label="Open menu"
-          aria-expanded={mobileNavOpen}
-          aria-controls="mobile-primary-nav"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-surface text-ink-muted hover:text-ink lg:hidden"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-surface text-ink-muted hover:text-ink md:hidden"
         >
           <Menu className="h-4 w-4" />
         </button>
 
-        <Link
-          to="/"
-          className="flex items-center gap-2"
-          onClick={() =>
-            trackEvent(appShellHeaderAnalyticsEvent(), appShellHeaderAnalyticsData("logo"))
-          }
-        >
+        <Link to="/" className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-md bg-ink text-background">
             <span className="font-display text-sm font-bold">hc</span>
           </span>
@@ -103,25 +71,14 @@ export function TopBar() {
           </span>
         </Link>
 
-        {/*
-          lg, not md: the six primary links measure ~420px, which together with
-          the logo and the action cluster overran the 768px row and scrolled the
-          whole page sideways. Below lg they live in the hamburger sheet.
-        */}
-        <nav aria-label="Primary" className="hidden items-center gap-1 lg:flex">
-          {SHELL_PRIMARY_NAV.map((item) => {
-            const active = shellNavItemActive(pathname, item.to);
+        <nav className="hidden items-center gap-1 md:flex">
+          {NAV.map((item) => {
+            const active = pathname.startsWith(item.to);
             return (
-              <ShellNavLink
+              <Link
                 key={item.to}
-                path={item.to}
+                to={item.to}
                 aria-current={active ? "page" : undefined}
-                onClick={() =>
-                  trackEvent(
-                    appShellNavAnalyticsEvent(),
-                    appShellNavAnalyticsData(item.to, "desktop"),
-                  )
-                }
                 className={cn(
                   "relative rounded-md px-2.5 py-1.5 text-sm transition-colors duration-200 ease-out",
                   active ? "text-ink" : "text-ink-muted hover:bg-surface-2 hover:text-ink",
@@ -134,39 +91,21 @@ export function TopBar() {
                     className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-accent"
                   />
                 )}
-              </ShellNavLink>
+              </Link>
             );
           })}
         </nav>
 
-        {/*
-          No min-w-0 here on purpose: the cluster must keep its intrinsic width
-          so the icon buttons and Submit CTA never collapse into each other.
-          Only the search slot inside it is allowed to shrink.
-        */}
-        <div className="ml-auto flex flex-1 items-center justify-end gap-2">
+        <div className="ml-auto flex flex-1 items-center justify-end gap-2 md:max-w-md">
           {!isHome && (
-            // Capped on the search itself rather than on the whole right cluster:
-            // a cluster-wide cap left the input (and its dropdown, which tracks
-            // the input's width) around 200px, crushing the scope chips and
-            // truncating result titles.
-            //
-            // On from sm (nav is in the hamburger, so the row is free), off at
-            // lg where the ~420px nav appears and leaves too little for a usable
-            // input, back on at xl where nav + search + actions all fit. Forcing
-            // an input into the lg band pushed the action buttons past the row
-            // and scrolled the whole page sideways.
-            <div className="hidden min-w-0 flex-1 sm:block lg:hidden xl:block xl:max-w-md">
+            <div className="hidden flex-1 sm:block">
               <CommandBar size="md" showHint={false} />
             </div>
           )}
           <AlertsDropdown />
           <button
             type="button"
-            onClick={() => {
-              trackEvent(appShellHeaderAnalyticsEvent(), appShellHeaderAnalyticsData("theme"));
-              toggle();
-            }}
+            onClick={toggle}
             aria-label="Toggle theme"
             className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-surface text-ink-muted hover:text-ink"
           >
@@ -178,24 +117,16 @@ export function TopBar() {
             rel="noreferrer"
             className="hidden h-9 w-9 items-center justify-center rounded-md border border-border bg-surface text-ink-muted hover:text-ink sm:inline-flex"
             aria-label="GitHub"
-            onClick={() =>
-              trackEvent(appShellHeaderAnalyticsEvent(), appShellHeaderAnalyticsData("github"))
-            }
           >
             <Github className="h-4 w-4" />
           </a>
-          {submitDestination ? (
-            <Link
-              to={submitDestination.to}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-3 text-sm font-medium text-background hover:bg-ink/90"
-              onClick={() =>
-                trackEvent(appShellHeaderAnalyticsEvent(), appShellHeaderAnalyticsData("submit"))
-              }
-            >
-              <Send className="h-3.5 w-3.5" />
-              Submit
-            </Link>
-          ) : null}
+          <Link
+            to="/submit"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-ink px-3 text-sm font-medium text-background hover:bg-ink/90"
+          >
+            <Send className="h-3.5 w-3.5" />
+            Submit
+          </Link>
         </div>
       </div>
 
@@ -203,43 +134,28 @@ export function TopBar() {
         <SheetContent side="left" className="w-72">
           <SheetHeader>
             <SheetTitle className="font-display text-base font-semibold text-ink">Menu</SheetTitle>
-            <SheetDescription className="sr-only">
-              Primary site navigation grouped by product area.
-            </SheetDescription>
+            <SheetDescription className="sr-only">Primary site navigation links.</SheetDescription>
           </SheetHeader>
-          <nav id="mobile-primary-nav" aria-label="Primary" className="mt-6 flex flex-col gap-6">
-            {SHELL_MOBILE_NAV_SECTIONS.map((section) => (
-              <div key={section.id}>
-                <div className="eyebrow mb-2">{section.label}</div>
-                <div className="flex flex-col gap-1">
-                  {section.links.map((item) => {
-                    const active = shellNavItemActive(pathname, item.to);
-                    return (
-                      <ShellNavLink
-                        key={item.to}
-                        path={item.to}
-                        onClick={() => {
-                          trackEvent(
-                            appShellNavAnalyticsEvent(),
-                            appShellNavAnalyticsData(item.to, "mobile", section.id),
-                          );
-                          setMobileNavOpen(false);
-                        }}
-                        aria-current={active ? "page" : undefined}
-                        className={cn(
-                          "rounded-md px-3 py-2 text-sm transition-colors duration-200 ease-out",
-                          active
-                            ? "bg-surface-2 text-ink"
-                            : "text-ink-muted hover:bg-surface-2 hover:text-ink",
-                        )}
-                      >
-                        {item.label}
-                      </ShellNavLink>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+          <nav className="mt-6 flex flex-col gap-1">
+            {NAV.map((item) => {
+              const active = pathname.startsWith(item.to);
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileNavOpen(false)}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "rounded-md px-3 py-2 text-sm transition-colors duration-200 ease-out",
+                    active
+                      ? "bg-surface-2 text-ink"
+                      : "text-ink-muted hover:bg-surface-2 hover:text-ink",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
         </SheetContent>
       </Sheet>
@@ -248,9 +164,6 @@ export function TopBar() {
 }
 
 export function Footer() {
-  const legalDestination = appShellLegalRouteDestination("legal");
-  const privacyDestination = appShellLegalRouteDestination("privacy");
-
   return (
     <footer className="mt-24 border-t border-border bg-surface">
       <NewsletterInline
@@ -259,7 +172,7 @@ export function Footer() {
         className="border-0 border-b border-border bg-background"
       />
       <div className="mx-auto grid max-w-page gap-10 px-4 py-12 sm:grid-cols-2 sm:px-6 md:grid-cols-12">
-        <div className={cn("sm:col-span-2", shellFooterBrandSpanClass())}>
+        <div className="sm:col-span-2 md:col-span-3">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-ink text-background">
               <span className="font-display text-sm font-bold">hc</span>
@@ -271,79 +184,83 @@ export function Footer() {
             reviewed before installing.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-1.5 text-[11px]">
-            <FeedChip label="RSS" feed="rss" />
-            <FeedChip label="Atom" feed="atom" />
-            <FeedChip label="JSON Feed" feed="json" />
-            <FeedChip label="llms.txt" feed="llms" />
+            <FeedChip href="/feed.xml" label="RSS" />
+            <FeedChip href="/atom.xml" label="Atom" />
+            <FeedChip href="/data/feeds/index.json" label="JSON Feed" />
+            <FeedChip href="/llms.txt" label="llms.txt" />
           </div>
         </div>
-        {SHELL_FOOTER_COLUMNS.map((column) => (
-          <FooterCol
-            key={column.id}
-            title={column.title}
-            links={column.links}
-            span={column.span}
-            columnId={column.id}
-          />
-        ))}
+        <FooterCol
+          title="Product"
+          links={[
+            { to: "/browse", label: "Browse" },
+            { to: "/trending", label: "Trending" },
+            { to: "/tags", label: "Tags" },
+            { to: "/for", label: "Platforms" },
+            { to: "/best", label: "Best lists" },
+            { to: "/compare", label: "Compare" },
+            { to: "/quality", label: "Quality" },
+            { to: "/state-of-claude-tooling", label: "State of tooling" },
+            { to: "/changelog", label: "Changelog" },
+            { to: "/brief", label: "Weekly Brief" },
+          ]}
+          span={3}
+        />
+        <FooterCol
+          title="Integrations"
+          links={[
+            { to: "/integrations", label: "All integrations" },
+            { to: "/integrations/mcp-server", label: "MCP server" },
+            { to: "/ecosystem", label: "Ecosystem" },
+            { to: "/api-docs", label: "API docs" },
+            { to: "/feeds", label: "Feeds" },
+            { to: "/subscriptions", label: "Subscriptions" },
+          ]}
+          span={3}
+        />
+        <FooterCol
+          title="Resources"
+          links={[
+            { to: "/submit", label: "Submit a resource" },
+            { to: "/claim", label: "Claim a listing" },
+            { to: "/contributors", label: "Contributors" },
+            { to: "/validators", label: "Review coverage" },
+            { to: "/advertise", label: "Advertise" },
+            { to: "/about", label: "About" },
+          ]}
+          span={3}
+        />
       </div>
       <div className="border-t border-border">
         <div className="mx-auto max-w-page px-4 py-4 sm:px-6">
           <div className="eyebrow mb-2">Categories</div>
           <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-ink-muted">
-            {CATEGORIES.map((c, i) => {
-              const destination = appShellCategoryDestination(c.id);
-              if (!destination) return null;
-              return (
-                <Link
-                  key={c.id}
-                  to={destination.to}
-                  params={destination.params}
-                  className="hover:text-ink"
-                  onClick={() =>
-                    trackEvent(
-                      appShellCategoryAnalyticsEvent(),
-                      appShellCategoryAnalyticsData(c.id, i, CATEGORIES.length),
-                    )
-                  }
-                >
-                  {c.label}
-                </Link>
-              );
-            })}
+            {CATEGORIES.map((c) => (
+              <Link
+                key={c.id}
+                to="/$category"
+                params={{ category: c.id }}
+                className="hover:text-ink"
+              >
+                {c.label}
+              </Link>
+            ))}
           </div>
         </div>
       </div>
       <div className="border-t border-border">
         <div className="mx-auto flex max-w-page flex-col items-start gap-3 px-4 py-5 text-xs text-ink-subtle sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <span>© {new Date().getFullYear()} HeyClaude · heyclau.de</span>
-          <nav aria-label="Legal" className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {legalDestination ? (
-              <Link
-                to={legalDestination.to}
-                className="hover:text-ink"
-                onClick={() =>
-                  trackEvent(appShellLegalAnalyticsEvent(), appShellLegalAnalyticsData("legal"))
-                }
-              >
-                Legal
-              </Link>
-            ) : null}
+          <nav className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Link to="/legal" className="hover:text-ink">
+              Legal
+            </Link>
             <span aria-hidden className="text-ink-subtle/60">
               ·
             </span>
-            {privacyDestination ? (
-              <Link
-                to={privacyDestination.to}
-                {...("hash" in privacyDestination ? { hash: privacyDestination.hash } : {})}
-                className="hover:text-ink"
-                onClick={() =>
-                  trackEvent(appShellLegalAnalyticsEvent(), appShellLegalAnalyticsData("privacy"))
-                }
-              >
-                Privacy
-              </Link>
-            ) : null}
+            <Link to="/legal" hash="privacy" className="hover:text-ink">
+              Privacy
+            </Link>
             <span aria-hidden className="text-ink-subtle/60">
               ·
             </span>
@@ -359,48 +276,13 @@ export function Footer() {
   );
 }
 
-function ShellNavLink({
-  path,
-  className,
-  children,
-  onClick,
-  ...props
-}: {
-  path: string;
-  className?: string;
-  children: React.ReactNode;
-  onClick?: () => void;
-  "aria-current"?: "page" | undefined;
-}) {
-  const destination = appShellNavRouteDestination(path);
-  if (!destination) {
-    return <span className={className}>{children}</span>;
-  }
-  return (
-    <Link
-      to={destination.to}
-      {...("params" in destination ? { params: destination.params } : {})}
-      className={className}
-      onClick={onClick}
-      {...props}
-    >
-      {children}
-    </Link>
-  );
-}
-
-function FeedChip({ label, feed }: { label: string; feed: AppShellFeedChip }) {
-  const hrefDestination = appShellFeedChipHrefDestination(feed);
-  if (!hrefDestination) return null;
+function FeedChip({ href, label }: { href: string; label: string }) {
   return (
     <a
-      href={hrefDestination.href}
+      href={href}
       target="_blank"
       rel="noreferrer"
       className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-ink-muted hover:text-ink"
-      onClick={() =>
-        trackEvent(appShellFeedChipAnalyticsEvent(), appShellFeedChipAnalyticsData(feed))
-      }
     >
       <Rss className="h-2.5 w-2.5" aria-hidden />
       {label}
@@ -411,14 +293,7 @@ function FeedChip({ label, feed }: { label: string; feed: AppShellFeedChip }) {
 function ShortcutsFooterLink() {
   const shortcuts = useShortcuts();
   return (
-    <button
-      type="button"
-      onClick={() => {
-        trackEvent(appShellHeaderAnalyticsEvent(), appShellHeaderAnalyticsData("shortcuts"));
-        shortcuts?.open();
-      }}
-      className="hover:text-ink"
-    >
+    <button type="button" onClick={() => shortcuts?.open()} className="hover:text-ink">
       Keyboard shortcuts
     </button>
   );
@@ -428,41 +303,23 @@ function FooterCol({
   title,
   links,
   span = 2,
-  columnId,
 }: {
   title: string;
   links: { to: string; label: string }[];
-  span?: 2 | 3 | 4;
-  columnId: string;
+  span?: number;
 }) {
+  const spanClass = span === 3 ? "md:col-span-3" : span === 4 ? "md:col-span-4" : "md:col-span-2";
   return (
-    <div className={footerColumnSpanClass(span)}>
+    <div className={spanClass}>
       <div className="eyebrow mb-3">{title}</div>
       <ul className="flex flex-col gap-2">
-        {links.map((l) => {
-          const destination = appShellNavRouteDestination(l.to);
-          return (
-            <li key={l.to}>
-              {destination ? (
-                <Link
-                  to={destination.to}
-                  {...("params" in destination ? { params: destination.params } : {})}
-                  className="text-sm text-ink-muted hover:text-ink"
-                  onClick={() =>
-                    trackEvent(
-                      appShellFooterLinkAnalyticsEvent(),
-                      appShellFooterLinkAnalyticsData(columnId, l.to),
-                    )
-                  }
-                >
-                  {l.label}
-                </Link>
-              ) : (
-                <span className="text-sm text-ink-muted">{l.label}</span>
-              )}
-            </li>
-          );
-        })}
+        {links.map((l) => (
+          <li key={l.to}>
+            <Link to={l.to} className="text-sm text-ink-muted hover:text-ink">
+              {l.label}
+            </Link>
+          </li>
+        ))}
       </ul>
     </div>
   );
